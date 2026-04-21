@@ -1,0 +1,16 @@
+[phases.setup]
+nixPkgs = ['python311', 'postgresql']
+
+[phases.install]
+cmds = [
+    'python -m venv /opt/venv',
+    '. /opt/venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt'
+]
+
+[phases.build]
+cmds = [
+    '. /opt/venv/bin/activate && python manage.py collectstatic --noinput'
+]
+
+[start]
+cmd = '. /opt/venv/bin/activate && python manage.py migrate --noinput && python manage.py seed_all && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 120'
