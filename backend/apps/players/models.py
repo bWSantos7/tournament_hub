@@ -110,6 +110,7 @@ class PlayerProfile(TimestampedModel):
 
     class Meta:
         ordering = ['-is_primary', '-created_at']
+        unique_together = [('user', 'display_name')]
         indexes = [
             models.Index(fields=['user', 'is_primary']),
             models.Index(fields=['home_state']),

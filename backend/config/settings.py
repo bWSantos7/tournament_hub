@@ -223,7 +223,9 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_TASK_TIME_LIMIT = 30 * 60       # hard kill after 30 min
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # SoftTimeLimitExceeded raised at 25 min
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 50  # recycle worker after 50 tasks (prevent memory leaks)
 
 # Email
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -243,10 +245,16 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
+# Content-Security-Policy — tightened for API-only backend
+CSP_DEFAULT_SRC = ("'none'",)
+CSP_FRAME_ANCESTORS = ("'none'",)
+
 if not DEBUG:
-    SECURE_SSL_REDIRECT = False  # Railway handles SSL at proxy level
+    SECURE_SSL_REDIRECT = False  # Railway terminates SSL at proxy level
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_HTTPONLY = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

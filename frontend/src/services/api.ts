@@ -2,27 +2,9 @@ import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'ax
 
 function resolveBaseUrl(): string {
   const configured = (import.meta.env.VITE_API_BASE_URL as string) || '';
-  if (typeof window === 'undefined') {
-    return configured || 'http://localhost:8000';
-  }
-
-  const host = window.location.hostname;
-  const isLocalPage = host === 'localhost' || host === '127.0.0.1';
-  const localApiHosts = new Set(['localhost', '127.0.0.1']);
-
-  if (configured) {
-    try {
-      const parsed = new URL(configured);
-      if (!isLocalPage && localApiHosts.has(parsed.hostname)) {
-        return `${parsed.protocol}//${host}:${parsed.port || '8000'}`;
-      }
-    } catch {
-      // Fall back to the configured value below.
-    }
-    return configured;
-  }
-
-  return `http://${host}:8000`;
+  if (configured) return configured;
+  // Dev fallback only — VITE_API_BASE_URL must be set in production.
+  return 'http://localhost:8000';
 }
 
 const BASE_URL = resolveBaseUrl();

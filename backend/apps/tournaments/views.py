@@ -1,8 +1,8 @@
 from collections import defaultdict
 from datetime import timedelta
 import hashlib
-import time
 
+from django.core.cache import cache
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
@@ -20,7 +20,7 @@ from .serializers import (
     TournamentSerializer,
 )
 
-_COMPATIBLE_PAYLOAD_CACHE: dict[str, tuple[float, dict]] = {}
+_COMPATIBLE_CACHE_TTL = 300  # 5 minutes
 
 
 class TournamentViewSet(viewsets.ReadOnlyModelViewSet):
@@ -141,12 +141,13 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
         except PlayerProfile.DoesNotExist:
             return Response({'error': 'Perfil nao encontrado'}, status=404)
 
-        cache_key = hashlib.md5(
-            f'compatible:{request.user.id}:{profile.id}:{request.get_full_path()}'.encode('utf-8')
-        ).hexdigest()
-        cached_entry = _COMPATIBLE_PAYLOAD_CACHE.get(cache_key)
-        if cached_entry and cached_entry[0] > time.time():
-            cached_payload = cached_entry[1]
+        cache_key = 'compatible:{}:{}:{}'.format(
+            request.user.id,
+            profile.id,
+            hashlib.sha256(request.get_full_path().encode()).hexdigest()[:16],
+        )
+        cached_payload = cache.get(cache_key)
+        if cached_payload is not None:
             return Response(cached_payload)
 
         qs = self.filter_queryset(self.get_queryset()).exclude(
@@ -177,11 +178,11 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
         page = self.paginate_queryset(compatible)
         if page is not None:
             response = self.get_paginated_response(page)
-            _COMPATIBLE_PAYLOAD_CACHE[cache_key] = (time.time() + 300, response.data)
+            cache.set(cache_key, response.data, _COMPATIBLE_CACHE_TTL)
             return response
 
         payload = {'count': len(compatible), 'results': compatible}
-        _COMPATIBLE_PAYLOAD_CACHE[cache_key] = (time.time() + 300, payload)
+        cache.set(cache_key, payload, _COMPATIBLE_CACHE_TTL)
         return Response(payload)
 
     @action(detail=True, methods=['get'])

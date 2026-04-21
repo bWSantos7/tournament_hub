@@ -7,6 +7,8 @@ from .views import (
     change_password,
     logout,
     delete_account,
+    password_reset_request,
+    password_reset_confirm,
 )
 
 urlpatterns = [
@@ -17,4 +19,6 @@ urlpatterns = [
     path('me/', MeView.as_view(), name='me'),
     path('change-password/', change_password, name='change_password'),
     path('delete-account/', delete_account, name='delete_account'),
+    path('password-reset/', password_reset_request, name='password_reset_request'),
+    path('password-reset/confirm/', password_reset_confirm, name='password_reset_confirm'),
 ]

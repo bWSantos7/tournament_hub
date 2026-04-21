@@ -84,8 +84,8 @@ def _create_alert(user, edition, kind, channel, title, body='', payload=None, de
     return alert
 
 
-@shared_task
-def dispatch_deadline_alerts():
+@shared_task(bind=True, max_retries=3, default_retry_delay=120)
+def dispatch_deadline_alerts(self):
     """
     For every watchlist item whose user wants deadline alerts,
     send a notification when entry_close_at is within the configured D-N windows.
@@ -140,14 +140,16 @@ def dispatch_deadline_alerts():
     return created
 
 
-@shared_task
-def dispatch_change_alert(edition_id: int, event_id: int):
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def dispatch_change_alert(self, edition_id: int, event_id: int):
     """Fan-out: notify every watcher of an edition when a change event is recorded."""
     try:
         edition = TournamentEdition.objects.get(pk=edition_id)
         event = TournamentChangeEvent.objects.get(pk=event_id)
     except (TournamentEdition.DoesNotExist, TournamentChangeEvent.DoesNotExist):
         return 0
+    except Exception as exc:
+        raise self.retry(exc=exc)
 
     created = 0
     watchers = WatchlistItem.objects.filter(edition=edition).select_related('user')
