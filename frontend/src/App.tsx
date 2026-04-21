@@ -26,14 +26,10 @@ const App: React.FC = () => {
           </PublicOnlyRoute>
         }
       />
-      <Route
-        path="/register"
-        element={
-          <PublicOnlyRoute>
-            <RegisterPage />
-          </PublicOnlyRoute>
-        }
-      />
+      {/* /register is NOT wrapped in PublicOnlyRoute: after step-1 (account creation)
+          the user is authenticated but needs to stay on this page to complete OTP steps.
+          setUser() is only called after all OTP verification is done. */}
+      <Route path="/register" element={<RegisterPage />} />
       <Route
         path="/recuperar-senha"
         element={

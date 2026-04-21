@@ -36,7 +36,7 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_class = TournamentEditionFilter
     search_fields = ('title', 'tournament__canonical_name')
     ordering_fields = ('start_date', 'entry_close_at', 'created_at')
-    ordering = ('start_date',)
+    ordering = ('-created_at',)  # newest additions first by default
 
     def get_queryset(self):
         return (

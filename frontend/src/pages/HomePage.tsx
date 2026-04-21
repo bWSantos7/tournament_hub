@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Clock, Sparkles, Bell, Loader2 } from 'lucide-react';
+import { ChevronRight, Clock, Sparkles, Bell, Loader2, CalendarDays } from 'lucide-react';
 import { TournamentEditionList, PlayerProfile } from '../types';
 import { closingSoon, compatibleForProfile, listEditions } from '../services/tournaments';
 import { listProfiles, unreadAlerts } from '../services/data';
@@ -12,6 +12,7 @@ export const HomePage: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [hasProfile, setHasProfile] = useState(false);
   const [compat, setCompat] = useState<TournamentEditionList[]>([]);
   const [closing, setClosing] = useState<TournamentEditionList[]>([]);
   const [recent, setRecent] = useState<TournamentEditionList[]>([]);
@@ -27,16 +28,17 @@ export const HomePage: React.FC = () => {
           unreadAlerts().catch(() => []),
         ]);
         const primary = pickBestProfile(profiles);
+        setHasProfile(profiles.length > 0);
         setProfile(primary);
         setClosing((closingData as TournamentEditionList[]).slice(0, 6));
         setRecent((recentData.results || []).slice(0, 6));
         setUnreadCount((alerts || []).length);
 
         if (primary) {
-          const compatData = await compatibleForProfile(primary.id, { page_size: 6 }).catch(
+          const compatData = await compatibleForProfile(primary.id, { page_size: 8 }).catch(
             () => ({ results: [] as TournamentEditionList[] }),
           );
-          setCompat((compatData.results || []).slice(0, 6));
+          setCompat((compatData.results || []).slice(0, 8));
         }
       } finally {
         setLoading(false);
@@ -52,35 +54,23 @@ export const HomePage: React.FC = () => {
     );
   }
 
-  if (!profile) {
-    return (
-      <div className="card text-center py-10">
-        <Sparkles className="w-10 h-10 text-accent-neon mx-auto mb-3" />
-        <h2 className="text-lg font-semibold mb-1">Vamos montar seu perfil</h2>
-        <p className="text-sm text-text-secondary mb-4">
-          Precisamos de alguns dados para mostrar torneios compatíveis com você.
-        </p>
-        <Link to="/onboarding" className="btn-primary inline-flex items-center gap-2">
-          Completar perfil <ChevronRight className="w-4 h-4" />
-        </Link>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
+      {/* ── Greeting ── */}
       <section>
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs text-text-muted">Olá,</div>
             <h1 className="text-2xl font-bold">
-              {user?.full_name || profile.display_name}
+              {user?.full_name || profile?.display_name || user?.email?.split('@')[0] || 'Jogador'}
             </h1>
-            <div className="text-xs text-text-secondary mt-1">
-              {profile.tennis_class && `Classe ${profile.tennis_class}`}
-              {profile.sporting_age ? ` • ${profile.sporting_age} anos esportivos` : ''}
-              {profile.home_state && ` • ${profile.home_state}`}
-            </div>
+            {profile && (
+              <div className="text-xs text-text-secondary mt-1">
+                {profile.tennis_class && `Classe ${profile.tennis_class}`}
+                {profile.sporting_age ? ` • ${profile.sporting_age} anos esportivos` : ''}
+                {profile.home_state && ` • ${profile.home_state}`}
+              </div>
+            )}
           </div>
           <Link to="/alertas" className="btn-ghost relative">
             <Bell className="w-5 h-5" />
@@ -93,15 +83,36 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      <Section
-        title="Compatíveis com você"
-        subtitle="Baseado no seu perfil e classe"
-        icon={<Sparkles className="w-4 h-4 text-accent-neon" />}
-        emptyText="Nenhum torneio compatível encontrado ainda. Novas ingestões acontecem a cada hora."
-        items={compat}
-        accent
-      />
+      {/* ── Complete profile CTA (only shown if no profile) ── */}
+      {!hasProfile && (
+        <div className="card flex items-start gap-3 border border-accent-neon/30 bg-accent-neon/5">
+          <Sparkles className="w-5 h-5 text-accent-neon shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Complete seu perfil</p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Informe sua categoria, idade e localização para ver torneios compatíveis com você.
+            </p>
+          </div>
+          <Link to="/onboarding" className="btn-primary !py-1.5 !px-3 text-xs shrink-0">
+            Configurar
+          </Link>
+        </div>
+      )}
 
+      {/* ── Compatible tournaments (only when profile exists) ── */}
+      {profile && (
+        <Section
+          title="Compatíveis com você"
+          subtitle="Baseado no seu perfil, categoria e localização"
+          icon={<Sparkles className="w-4 h-4 text-accent-neon" />}
+          emptyText="Nenhum torneio compatível encontrado ainda. Verifique se seu perfil está completo ou aguarde novas ingestões (a cada hora)."
+          items={compat}
+          viewAll="/torneios"
+          accent
+        />
+      )}
+
+      {/* ── Closing soon ── */}
       <Section
         title="Inscrições fechando"
         subtitle="Próximos 14 dias"
@@ -110,12 +121,14 @@ export const HomePage: React.FC = () => {
         items={closing}
       />
 
+      {/* ── Recently added ── */}
       <Section
         title="Recentemente adicionados"
-        subtitle="Últimos torneios agregados"
+        subtitle="Últimos torneios agregados pelas fontes"
+        icon={<CalendarDays className="w-4 h-4 text-text-muted" />}
         items={recent}
         viewAll="/torneios"
-        emptyText="Nenhum torneio na base ainda."
+        emptyText="Nenhum torneio na base ainda. As ingestões acontecem automaticamente a cada hora."
       />
     </div>
   );

@@ -228,16 +228,38 @@ CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # SoftTimeLimitExceeded raised at 25 min
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 50  # recycle worker after 50 tasks (prevent memory leaks)
 
 # Email
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = config('EMAIL_HOST', default='localhost')
-EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
-EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@tournamenthub.app')
+# Supports two configuration styles:
+#   1. EMAIL_URL=smtp://user:pass@host:port  (recommended for Railway)
+#      e.g. smtp+tls://user%40gmail.com:app-pass@smtp.gmail.com:587
+#   2. Individual vars: EMAIL_HOST, EMAIL_PORT, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
+#
+# Free transactional email options for Railway:
+#   - Resend (resend.com) — set EMAIL_HOST=smtp.resend.com / EMAIL_HOST_USER=resend
+#   - Brevo (brevo.com)  — set EMAIL_HOST=smtp-relay.brevo.com / port 587
+#   - Gmail App Password — EMAIL_HOST=smtp.gmail.com / EMAIL_PORT=587
 
-if not EMAIL_HOST_USER:
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+_email_url = config('EMAIL_URL', default='')
+if _email_url:
+    import urllib.parse as _up
+    _u = _up.urlparse(_email_url)
+    EMAIL_HOST = _u.hostname or 'localhost'
+    EMAIL_PORT = _u.port or 587
+    EMAIL_HOST_USER = _up.unquote(_u.username or '')
+    EMAIL_HOST_PASSWORD = _up.unquote(_u.password or '')
+    EMAIL_USE_TLS = _u.scheme in ('smtp+tls', 'smtp+starttls', 'smtps', 'submission')
+    EMAIL_USE_SSL = _u.scheme in ('smtps',)
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = config('EMAIL_HOST', default='localhost')
+    EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+    EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+    EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+    EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+    if not EMAIL_HOST_USER:
+        EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@tournamenthub.app')
 
 # Security settings (production)
 SECURE_BROWSER_XSS_FILTER = True

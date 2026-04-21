@@ -259,6 +259,9 @@ def password_reset_request(request):
     frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
     reset_url = f'{frontend_url}/redefinir-senha/{uid}/{token}/'
 
+    # Always log the URL so it's visible in Railway logs even when SMTP is off
+    logger.info('Password reset link for %s: %s', email, reset_url)
+
     try:
         send_mail(
             subject='[Tournament Hub] Redefinição de senha',
@@ -270,10 +273,11 @@ def password_reset_request(request):
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
-            fail_silently=True,
+            fail_silently=False,
         )
+        logger.info('Password reset email sent to %s', email)
     except Exception:
-        logger.exception('Failed to send password reset email to %s', email)
+        logger.exception('Failed to send password reset email to %s — link: %s', email, reset_url)
 
     return Response({'detail': 'Se o email existir, enviaremos as instruções.'})
 

@@ -35,6 +35,7 @@ export const TournamentsPage: React.FC = () => {
   useEffect(() => {
     let cancel = false;
     setLoading(true);
+    // Default ordering: upcoming first (start_date asc skips very old; -created_at as tiebreak)
     listEditions({ ...filters, page, page_size: 20 })
       .then((data) => {
         if (cancel) return;
