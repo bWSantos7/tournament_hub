@@ -43,6 +43,24 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
+
+        # Send email OTP automatically after registration
+        from .otp import generate_and_store
+        from django.core.mail import send_mail
+        code = generate_and_store(user.id, 'email')
+        send_mail(
+            subject='[Tournament Hub] Verifique seu e-mail',
+            message=(
+                f'Olá {user.full_name or user.email}!\n\n'
+                f'Seu código de verificação de e-mail é:\n\n'
+                f'  {code}\n\n'
+                f'Válido por 10 minutos. Não compartilhe com ninguém.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=True,
+        )
+
         return Response({
             'user': UserSerializer(user).data,
             'access': str(refresh.access_token),
@@ -136,6 +154,85 @@ def delete_account(request):
     user.full_name = ''
     user.save()
     return Response({'detail': 'Conta removida.'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class OtpThrottle(AnonRateThrottle):
+    rate = '10/hour'
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([OtpThrottle])
+def send_email_otp(request):
+    """Send 6-digit OTP to the authenticated user's email."""
+    from .otp import generate_and_store
+    from django.core.mail import send_mail as _send_mail
+    user = request.user
+    code = generate_and_store(user.id, 'email')
+    _send_mail(
+        subject='[Tournament Hub] Código de verificação de e-mail',
+        message=(
+            f'Seu código de verificação é:\n\n  {code}\n\n'
+            f'Válido por 10 minutos. Não compartilhe com ninguém.'
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=True,
+    )
+    return Response({'detail': f'Código enviado para {user.email}.'})
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def verify_email_otp(request):
+    """Verify email OTP and mark user's email as verified."""
+    from .otp import verify
+    code = (request.data.get('code') or '').strip()
+    if not code:
+        return Response({'detail': 'Código obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+    if verify(request.user.id, 'email', code):
+        request.user.email_verified = True
+        request.user.save(update_fields=['email_verified', 'updated_at'])
+        return Response({'detail': 'E-mail verificado com sucesso.'})
+    return Response({'detail': 'Código inválido ou expirado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([OtpThrottle])
+def send_phone_otp(request):
+    """Send 6-digit OTP via SMS to the given phone number."""
+    from .otp import generate_and_store, send_sms
+    phone = (request.data.get('phone') or '').strip()
+    if not phone:
+        phone = request.user.phone
+    if not phone:
+        return Response({'detail': 'Número de telefone obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if phone != request.user.phone:
+        request.user.phone = phone
+        request.user.phone_verified = False
+        request.user.save(update_fields=['phone', 'phone_verified', 'updated_at'])
+
+    code = generate_and_store(request.user.id, 'phone')
+    send_sms(phone, f'Tournament Hub: seu código de verificação é {code}. Válido por 10 min.')
+    masked = f'{phone[:3]}***{phone[-2:]}' if len(phone) > 5 else '***'
+    return Response({'detail': f'Código enviado para {masked}.'})
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def verify_phone_otp(request):
+    """Verify phone OTP and mark user's phone as verified."""
+    from .otp import verify
+    code = (request.data.get('code') or '').strip()
+    if not code:
+        return Response({'detail': 'Código obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+    if verify(request.user.id, 'phone', code):
+        request.user.phone_verified = True
+        request.user.save(update_fields=['phone_verified', 'updated_at'])
+        return Response({'detail': 'Telefone verificado com sucesso.'})
+    return Response({'detail': 'Código inválido ou expirado.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PasswordResetRequestThrottle(AnonRateThrottle):

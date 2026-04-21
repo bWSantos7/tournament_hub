@@ -4,6 +4,8 @@ import { AppLayout } from './components/AppLayout';
 import { ProtectedRoute, PublicOnlyRoute } from './components/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { HomePage } from './pages/HomePage';
 import { TournamentsPage } from './pages/TournamentsPage';
@@ -29,6 +31,22 @@ const App: React.FC = () => {
         element={
           <PublicOnlyRoute>
             <RegisterPage />
+          </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/recuperar-senha"
+        element={
+          <PublicOnlyRoute>
+            <ForgotPasswordPage />
+          </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/redefinir-senha/:uid/:token"
+        element={
+          <PublicOnlyRoute>
+            <ResetPasswordPage />
           </PublicOnlyRoute>
         }
       />

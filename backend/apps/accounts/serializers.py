@@ -13,11 +13,15 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'email', 'full_name', 'role',
+            'id', 'email', 'full_name', 'phone', 'role',
+            'email_verified', 'phone_verified',
             'consent_version', 'consented_at', 'marketing_consent',
             'is_staff', 'created_at',
         )
-        read_only_fields = ('id', 'is_staff', 'consent_version', 'consented_at', 'created_at')
+        read_only_fields = (
+            'id', 'is_staff', 'consent_version', 'consented_at', 'created_at',
+            'email_verified', 'phone_verified',
+        )
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -29,13 +33,14 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'email', 'full_name', 'role',
+            'email', 'full_name', 'phone', 'role',
             'password', 'password_confirm',
             'accept_terms', 'marketing_consent',
         )
         extra_kwargs = {
             'email': {'required': True},
             'full_name': {'required': False, 'allow_blank': True},
+            'phone': {'required': False, 'allow_blank': True},
             'role': {'required': False},
         }
 
@@ -53,6 +58,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             password=validated_data['password'],
             full_name=validated_data.get('full_name', ''),
+            phone=validated_data.get('phone', ''),
             role=validated_data.get('role', User.ROLE_PLAYER),
             marketing_consent=validated_data.get('marketing_consent', False),
             consent_version=CURRENT_CONSENT_VERSION,
@@ -90,4 +96,4 @@ class PasswordChangeSerializer(serializers.Serializer):
 class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('full_name', 'role', 'marketing_consent')
+        fields = ('full_name', 'phone', 'role', 'marketing_consent')

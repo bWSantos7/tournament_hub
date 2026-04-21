@@ -61,6 +61,24 @@ export async function deleteAccount() {
   localStorage.removeItem(USER_KEY);
 }
 
+// ─── OTP ────────────────────────────────────────────────────────────────────
+
+export async function sendEmailOtp(): Promise<void> {
+  await api.post('/api/auth/send-email-otp/');
+}
+
+export async function verifyEmailOtp(code: string): Promise<void> {
+  await api.post('/api/auth/verify-email/', { code });
+}
+
+export async function sendPhoneOtp(phone: string): Promise<void> {
+  await api.post('/api/auth/send-phone-otp/', { phone });
+}
+
+export async function verifyPhoneOtp(code: string): Promise<void> {
+  await api.post('/api/auth/verify-phone/', { code });
+}
+
 function persistAuth(data: LoginResponse) {
   localStorage.setItem(TOKEN_KEY, data.access);
   localStorage.setItem(REFRESH_KEY, data.refresh);

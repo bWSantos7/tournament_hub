@@ -46,10 +46,15 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
 
     email = models.EmailField(_('email address'), unique=True, db_index=True)
     full_name = models.CharField(max_length=150, blank=True)
+    phone = models.CharField(max_length=20, blank=True, help_text='Celular com DDD, ex: +5511999999999')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_PLAYER)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+
+    # Verification
+    email_verified = models.BooleanField(default=False)
+    phone_verified = models.BooleanField(default=False)
 
     # LGPD / consent
     consent_version = models.CharField(max_length=20, blank=True, default='')

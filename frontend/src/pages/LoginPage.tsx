@@ -85,6 +85,15 @@ export const LoginPage: React.FC = () => {
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Entrar
           </button>
+
+          <div className="text-center">
+            <Link
+              to="/recuperar-senha"
+              className="text-xs text-text-muted hover:text-accent-neon transition-colors"
+            >
+              Esqueceu a senha?
+            </Link>
+          </div>
         </form>
 
         <div className="text-center mt-4 text-sm text-text-secondary">
