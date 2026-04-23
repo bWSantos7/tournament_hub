@@ -14,7 +14,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://YOUR_RAILWAY_URL.railway.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://tournamenthub-production.up.railway.app"
       },
       "android": {
         "buildType": "apk"
@@ -25,7 +25,7 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://YOUR_RAILWAY_URL.railway.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://tournamenthub-production.up.railway.app"
       },
       "android": {
         "buildType": "app-bundle"
