@@ -12,7 +12,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0D0D0D"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.tennishub.mobile",
@@ -31,12 +33,13 @@
         "backgroundColor": "#0D0D0D"
       },
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE",
-        "POST_NOTIFICATIONS"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -60,8 +63,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "FILL_IN_AFTER_eas_init"
+        "projectId": "9f1f2255-c936-4597-9c27-f2a70537134a"
       }
-    }
+    },
+    "owner": "bwsantos7"
   }
 }
