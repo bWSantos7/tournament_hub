@@ -97,7 +97,7 @@ ASGI_APPLICATION = 'config.asgi.application'
 # Database
 DATABASES = {
     'default': dj_database_url.parse(
-        config('DATABASE_URL'),
+        config('DATABASE_URL', default='sqlite:////tmp/build.db'),
         conn_max_age=600,
         ssl_require=False,
     )
