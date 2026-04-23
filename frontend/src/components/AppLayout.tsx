@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Home, Calendar, Star, Bell, User, LogOut, Trophy, ShieldCheck, Sun, Moon, Users, Award } from 'lucide-react';
+import { Home, Calendar, Star, Bell, User, LogOut, ShieldCheck, Sun, Moon, Users, Award } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -28,11 +28,11 @@ export const AppLayout: React.FC = () => {
       <header className="sticky top-0 z-30 bg-bg-base/80 backdrop-blur-lg border-b border-border-subtle">
         <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between">
           <NavLink to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-accent-neon flex items-center justify-center shadow-glow">
-              <Trophy className="w-4 h-4 text-bg-base" strokeWidth={2.5} />
+            <div className="w-8 h-8 rounded-lg bg-accent-neon flex items-center justify-center shadow-glow overflow-hidden">
+              <img src="/icons/logo.png" alt="Tennis Hub" className="w-6 h-6 object-contain" style={{ filter: 'brightness(0)' }} />
             </div>
             <div>
-              <div className="text-sm font-bold leading-tight">Tournament Hub</div>
+              <div className="text-sm font-bold leading-tight">Tennis Hub</div>
               <div className="text-[10px] text-text-muted leading-tight">Tênis • Brasil</div>
             </div>
           </NavLink>

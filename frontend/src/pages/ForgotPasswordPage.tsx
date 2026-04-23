@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Loader2, Trophy } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 
@@ -26,8 +26,8 @@ export const ForgotPasswordPage: React.FC = () => {
     <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-accent-neon flex items-center justify-center shadow-glow mb-4">
-            <Trophy className="w-7 h-7 text-bg-base" strokeWidth={2.5} />
+          <div className="w-16 h-16 rounded-2xl bg-accent-neon flex items-center justify-center shadow-glow mb-4 overflow-hidden">
+            <img src="/icons/logo.png" alt="Tennis Hub" className="w-12 h-12 object-contain" style={{ filter: 'brightness(0)' }} />
           </div>
           <h1 className="text-2xl font-bold">Recuperar senha</h1>
           <p className="text-text-muted text-sm mt-1">

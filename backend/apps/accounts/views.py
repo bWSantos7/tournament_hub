@@ -53,7 +53,7 @@ class RegisterView(generics.CreateAPIView):
         from django.core.mail import send_mail
         code = generate_and_store(user.id, 'email')
         send_mail(
-            subject='[Tournament Hub] Verifique seu e-mail',
+            subject='[Tennis Hub] Verifique seu e-mail',
             message=(
                 f'Olá {user.full_name or user.email}!\n\n'
                 f'Seu código de verificação de e-mail é:\n\n'
@@ -193,7 +193,7 @@ def send_email_otp(request):
     user = request.user
     code = generate_and_store(user.id, 'email')
     _send_mail(
-        subject='[Tournament Hub] Código de verificação de e-mail',
+        subject='[Tennis Hub] Código de verificação de e-mail',
         message=(
             f'Seu código de verificação é:\n\n  {code}\n\n'
             f'Válido por 10 minutos. Não compartilhe com ninguém.'
@@ -250,7 +250,7 @@ def password_reset_request(request):
 
     try:
         send_mail(
-            subject='[Tournament Hub] Redefinição de senha',
+            subject='[Tennis Hub] Redefinição de senha',
             message=(
                 f'Olá {user.full_name or user.email},\n\n'
                 f'Clique no link abaixo para redefinir sua senha (válido por 24h):\n\n'

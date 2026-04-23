@@ -13,8 +13,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.svg'],
       manifest: {
-        name: 'Tournament Hub',
-        short_name: 'THub',
+        name: 'Tennis Hub',
+        short_name: 'Tennis Hub',
         description: 'Acompanhe torneios de tênis e padel',
         theme_color: '#39ff14',
         background_color: '#0d0d0d',

@@ -1,0 +1,1 @@
+# Tournament Hub Mobile\n\nApp mobile em React Native + Expo criado para espelhar o frontend web do projeto.\n

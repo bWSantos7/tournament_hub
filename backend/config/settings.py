@@ -1,5 +1,5 @@
 """
-Django settings for Tournament Hub.
+Django settings for Tennis Hub.
 Production-ready configuration with security best practices.
 """
 from pathlib import Path
@@ -265,7 +265,7 @@ if not DEBUG:
 # Scraper config
 SCRAPER_USER_AGENT = config(
     'SCRAPER_USER_AGENT',
-    default='TournamentHubBot/1.0'
+    default='TennisHubBot/1.0'
 )
 SCRAPER_TIMEOUT = config('SCRAPER_TIMEOUT', default=30, cast=int)
 SCRAPER_RATE_LIMIT_SECONDS = config('SCRAPER_RATE_LIMIT_SECONDS', default=2, cast=int)
@@ -284,7 +284,7 @@ if CLOUDINARY_URL:
 
 # DRF Spectacular
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Tournament Hub API',
+    'TITLE': 'Tennis Hub API',
     'DESCRIPTION': 'Agregador de torneios de tênis centrado no jogador',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle, Loader2, Mail, Trophy } from 'lucide-react';
+import { ArrowRight, CheckCircle, Loader2, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { register, sendEmailOtp, verifyEmailOtp } from '../services/auth';
 import { createProfile } from '../services/data';
@@ -150,8 +150,8 @@ export const RegisterPage: React.FC = () => {
 
         {/* Header */}
         <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-accent-neon flex items-center justify-center shadow-glow mb-3">
-            <Trophy className="w-6 h-6 text-bg-base" strokeWidth={2.5} />
+          <div className="w-14 h-14 rounded-2xl bg-accent-neon flex items-center justify-center shadow-glow mb-3 overflow-hidden">
+            <img src="/icons/logo.png" alt="Tennis Hub" className="w-10 h-10 object-contain" style={{ filter: 'brightness(0)' }} />
           </div>
           <h1 className="text-xl font-bold">Criar conta</h1>
         </div>
