@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Bell, Loader2, CheckCheck, Clock, AlertCircle, Sparkles, XCircle, ExternalLink,
+  Bell, BellOff, BellRing, Loader2, CheckCheck, Clock, AlertCircle, Sparkles, XCircle, ExternalLink,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Alert } from '../types';
 import { listAlerts, markAlertRead, markAllAlertsRead } from '../services/data';
 import { fmtRelative } from '../utils/format';
 import { extractApiError } from '../services/api';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 const KIND_ICONS: Record<Alert['kind'], React.ReactNode> = {
   deadline: <Clock className="w-5 h-5 text-status-closing" />,
@@ -20,6 +21,14 @@ const KIND_ICONS: Record<Alert['kind'], React.ReactNode> = {
 export const AlertsPage: React.FC = () => {
   const [items, setItems] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pushGranted, setPushGranted] = useState<boolean | null>(null);
+  const push = usePushNotifications();
+
+  useEffect(() => {
+    if (push.isSupported) {
+      setPushGranted(Notification.permission === 'granted');
+    }
+  }, [push.isSupported]);
 
   async function load() {
     setLoading(true);
@@ -42,6 +51,18 @@ export const AlertsPage: React.FC = () => {
         prev.map((a) => (a.id === id ? { ...a, status: 'read', read_at: new Date().toISOString() } : a)),
       );
     } catch { /* ignore */ }
+  }
+
+  async function handlePushToggle() {
+    if (pushGranted) {
+      const ok = await push.unsubscribe();
+      if (ok) { setPushGranted(false); toast.success('Notificações push desativadas.'); }
+      else if (push.error) toast.error(push.error);
+    } else {
+      const ok = await push.subscribe();
+      if (ok) { setPushGranted(true); toast.success('Notificações push ativadas!'); }
+      else if (push.error) toast.error(push.error);
+    }
   }
 
   async function markAll() {
@@ -79,6 +100,36 @@ export const AlertsPage: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* Push notification toggle */}
+      {push.isSupported && (
+        <div className="card flex items-center justify-between gap-3 !py-3">
+          <div className="flex items-center gap-2">
+            {pushGranted ? (
+              <BellRing className="w-4 h-4 text-accent-neon" />
+            ) : (
+              <BellOff className="w-4 h-4 text-text-muted" />
+            )}
+            <div>
+              <p className="text-sm font-medium text-text-primary">Notificações push</p>
+              <p className="text-xs text-text-muted">
+                {pushGranted ? 'Ativas — você receberá alertas mesmo com o app fechado' : 'Desativadas'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handlePushToggle}
+            disabled={push.loading}
+            className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${
+              pushGranted
+                ? 'border-red-400/40 text-red-400 hover:bg-red-400/10'
+                : 'border-accent-neon/40 text-accent-neon hover:bg-accent-neon/10'
+            }`}
+          >
+            {push.loading ? <Loader2 className="w-3 h-3 animate-spin" /> : pushGranted ? 'Desativar' : 'Ativar'}
+          </button>
+        </div>
+      )}
 
       {items.length === 0 ? (
         <div className="card text-center py-10">

@@ -1,18 +1,60 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Trash2, Mail, Edit2, CheckCircle2 } from 'lucide-react';
+import { Loader2, Trash2, Mail, Edit2, CheckCircle2, Camera, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { PlayerProfile } from '../types';
 import { listProfiles, setPrimary, deleteProfile, updateProfile } from '../services/data';
-import { deleteAccount } from '../services/auth';
-import { extractApiError } from '../services/api';
+import { deleteAccount, uploadAvatar } from '../services/auth';
+import { extractApiError, mediaUrl } from '../services/api';
+
+// ─── Confirm Modal ────────────────────────────────────────────────────────────
+
+interface ConfirmModalProps {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const ConfirmModal: React.FC<ConfirmModalProps> = ({
+  title, message, confirmLabel = 'Confirmar', danger = false, onConfirm, onCancel,
+}) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="bg-bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+      <div className="flex items-start gap-3">
+        {danger && <AlertTriangle className="w-5 h-5 text-status-canceled mt-0.5 shrink-0" />}
+        <div>
+          <h2 className="font-semibold text-base">{title}</h2>
+          <p className="text-sm text-text-secondary mt-1">{message}</p>
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button className="btn-secondary" onClick={onCancel}>Cancelar</button>
+        <button
+          className={danger ? 'btn-primary !bg-status-canceled !border-status-canceled/60' : 'btn-primary'}
+          onClick={onConfirm}
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export const ProfilePage: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, setUser, logout } = useAuth();
   const [profiles, setProfiles] = useState<PlayerProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<number | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
     setLoading(true);
@@ -36,17 +78,18 @@ export const ProfilePage: React.FC = () => {
     } catch (err) { toast.error(extractApiError(err)); }
   }
 
-  async function remove(id: number) {
-    if (!confirm('Remover este perfil?')) return;
+  async function handleRemoveConfirmed() {
+    if (confirmRemove == null) return;
     try {
-      await deleteProfile(id);
+      await deleteProfile(confirmRemove);
       toast.success('Perfil removido');
       load();
     } catch (err) { toast.error(extractApiError(err)); }
+    finally { setConfirmRemove(null); }
   }
 
-  async function handleDeleteAccount() {
-    if (!confirm('Tem certeza? Esta ação é permanente (LGPD).')) return;
+  async function handleDeleteAccountConfirmed() {
+    setConfirmDelete(false);
     try {
       await deleteAccount();
       toast.success('Conta removida');
@@ -54,15 +97,59 @@ export const ProfilePage: React.FC = () => {
     } catch (err) { toast.error(extractApiError(err)); }
   }
 
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const updated = await uploadAvatar(file);
+      setUser(updated);
+      toast.success('Foto atualizada');
+    } catch (err) {
+      toast.error(extractApiError(err));
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  const avatarLetter = (user?.full_name || user?.email || 'U').slice(0, 1).toUpperCase();
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Perfil</h1>
 
+      {/* User card */}
       <div className="card">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-accent-neon/20 text-accent-neon flex items-center justify-center text-lg font-bold">
-            {(user?.full_name || user?.email || 'U').slice(0, 1).toUpperCase()}
+        <div className="flex items-center gap-4">
+          {/* Avatar with upload overlay */}
+          <div className="relative shrink-0">
+            <div className="w-14 h-14 rounded-full bg-accent-neon/20 text-accent-neon flex items-center justify-center text-xl font-bold overflow-hidden">
+              {user?.avatar ? (
+                <img src={mediaUrl(user.avatar)} alt="avatar" className="w-full h-full object-cover" />
+              ) : (
+                avatarLetter
+              )}
+            </div>
+            <button
+              className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-bg-card border border-border flex items-center justify-center hover:bg-bg-elevated transition-colors"
+              title="Alterar foto"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAvatar}
+            >
+              {uploadingAvatar
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-neon" />
+                : <Camera className="w-3.5 h-3.5 text-text-secondary" />}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
           </div>
+
           <div className="min-w-0 flex-1">
             <div className="font-semibold truncate">{user?.full_name || '—'}</div>
             <div className="text-xs text-text-muted flex items-center gap-1">
@@ -77,6 +164,7 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
+      {/* Sports profiles */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold">Perfis esportivos</h2>
@@ -137,7 +225,7 @@ export const ProfilePage: React.FC = () => {
                         <button
                           className="btn-ghost !p-1.5 text-status-canceled"
                           title="Remover"
-                          onClick={() => remove(p.id)}
+                          onClick={() => setConfirmRemove(p.id)}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -159,6 +247,7 @@ export const ProfilePage: React.FC = () => {
         )}
       </div>
 
+      {/* Privacy / delete account */}
       <div className="card">
         <h2 className="font-semibold mb-2">Sua privacidade</h2>
         <p className="text-xs text-text-secondary mb-3">
@@ -166,14 +255,39 @@ export const ProfilePage: React.FC = () => {
         </p>
         <button
           className="btn-secondary !text-status-canceled !border-status-canceled/30"
-          onClick={handleDeleteAccount}
+          onClick={() => setConfirmDelete(true)}
         >
           Excluir minha conta
         </button>
       </div>
+
+      {/* Modals */}
+      {confirmRemove != null && (
+        <ConfirmModal
+          title="Remover perfil"
+          message="Este perfil será excluído permanentemente. Deseja continuar?"
+          confirmLabel="Remover"
+          danger
+          onConfirm={handleRemoveConfirmed}
+          onCancel={() => setConfirmRemove(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Excluir conta"
+          message="Todos os seus dados serão removidos permanentemente conforme a LGPD. Esta ação não pode ser desfeita."
+          confirmLabel="Excluir conta"
+          danger
+          onConfirm={handleDeleteAccountConfirmed}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 };
+
+// ─── Profile Editor ───────────────────────────────────────────────────────────
 
 const ProfileEditor: React.FC<{
   profile: PlayerProfile;

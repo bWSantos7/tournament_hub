@@ -47,3 +47,21 @@ class WatchlistItem(TimestampedModel):
 
     def __str__(self):
         return f'{self.user.email} ♥ {self.edition.title}'
+
+
+class TournamentResult(TimestampedModel):
+    """Records the outcome of a completed tournament participation."""
+    watchlist_item = models.OneToOneField(
+        WatchlistItem, on_delete=models.CASCADE, related_name='result'
+    )
+    category_played = models.CharField(max_length=200, blank=True)
+    position = models.PositiveIntegerField(null=True, blank=True, help_text='Final position (1 = winner)')
+    wins = models.PositiveIntegerField(default=0)
+    losses = models.PositiveIntegerField(default=0)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Result: {self.watchlist_item}'

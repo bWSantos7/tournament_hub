@@ -52,3 +52,4 @@ Thumbs.db
 scraper_cache/
 logs/*.log
 *.pyc
+.claude

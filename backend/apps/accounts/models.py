@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -47,6 +48,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
     email = models.EmailField(_('email address'), unique=True, db_index=True)
     full_name = models.CharField(max_length=150, blank=True)
     phone = models.CharField(max_length=20, blank=True, help_text='Celular com DDD, ex: +5511999999999')
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_PLAYER)
 
     is_active = models.BooleanField(default=True)
@@ -54,7 +56,6 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
 
     # Verification
     email_verified = models.BooleanField(default=False)
-    phone_verified = models.BooleanField(default=False)
 
     # LGPD / consent
     consent_version = models.CharField(max_length=20, blank=True, default='')
@@ -79,3 +80,22 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
 
     def get_short_name(self):
         return self.full_name.split(' ')[0] if self.full_name else self.email
+
+
+class CoachAthlete(TimestampedModel):
+    """Links a coach user to an athlete user they manage."""
+    coach = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='athletes'
+    )
+    athlete = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='coaches'
+    )
+    is_active = models.BooleanField(default=True)
+    notes = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        unique_together = ('coach', 'athlete')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.coach.email} → {self.athlete.email}'

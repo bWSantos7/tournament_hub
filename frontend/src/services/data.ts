@@ -1,5 +1,5 @@
 import api from './api';
-import { Alert, Paginated, PlayerCategory, PlayerProfile, WatchlistItem } from '../types';
+import { Alert, CoachAthlete, Paginated, PlayerCategory, PlayerProfile, WatchlistItem } from '../types';
 
 // ----- Players -----
 export async function listProfiles() {
@@ -62,6 +62,37 @@ export async function watchlistSummary() {
     past: number;
     by_status: Record<string, number>;
   }>('/api/watchlist/summary/');
+  return res.data;
+}
+
+export async function saveResult(watchlistItemId: number, data: {
+  category_played?: string;
+  position?: number | null;
+  wins?: number;
+  losses?: number;
+  notes?: string;
+}) {
+  const res = await api.post(`/api/watchlist/${watchlistItemId}/result/`, data);
+  return res.data;
+}
+
+// ----- Coach -----
+export async function listAthletes() {
+  const res = await api.get<Paginated<CoachAthlete> | CoachAthlete[]>('/api/accounts/coach/athletes/');
+  const d = res.data as Paginated<CoachAthlete>;
+  return d.results ?? (res.data as CoachAthlete[]);
+}
+export async function addAthlete(athlete_email: string, notes?: string) {
+  const res = await api.post<CoachAthlete>('/api/accounts/coach/athletes/', { athlete_email, notes: notes ?? '' });
+  return res.data;
+}
+export async function removeAthlete(id: number) {
+  return api.delete(`/api/accounts/coach/athletes/${id}/`);
+}
+export async function getAthleteWatchlist(id: number) {
+  const res = await api.get<{ athlete: string; watchlist: WatchlistItem[] }>(
+    `/api/accounts/coach/athletes/${id}/watchlist/`
+  );
   return res.data;
 }
 

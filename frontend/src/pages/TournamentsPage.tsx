@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, Loader2, X } from 'lucide-react';
+import { Search, Filter, Loader2, X, MapPin } from 'lucide-react';
 import { TournamentEditionList } from '../types';
 import { listEditions, TournamentFilters } from '../services/tournaments';
+import { listProfiles } from '../services/data';
 import { TournamentCard } from '../components/TournamentCard';
+import { pickBestProfile } from '../utils/profile';
 
 const STATES = [
   '', 'SP','RJ','MG','RS','SC','PR','BA','PE','CE','DF','GO','ES',
@@ -16,6 +18,8 @@ const STATUS_OPTS = [
   { v: 'announced', l: 'Anunciados' },
   { v: 'in_progress', l: 'Em andamento' },
   { v: 'draws_published', l: 'Chaves publicadas' },
+  { v: 'finished', l: 'Finalizados' },
+  { v: 'canceled', l: 'Cancelados' },
 ];
 
 export const TournamentsPage: React.FC = () => {
@@ -26,6 +30,15 @@ export const TournamentsPage: React.FC = () => {
   const [filters, setFilters] = useState<TournamentFilters>({ status: '', state: '' });
   const [showFilters, setShowFilters] = useState(false);
   const [q, setQ] = useState('');
+  const [nearMe, setNearMe] = useState(false);
+  const [primaryProfileId, setPrimaryProfileId] = useState<number | null>(null);
+
+  useEffect(() => {
+    listProfiles().then((profiles) => {
+      const primary = pickBestProfile(Array.isArray(profiles) ? profiles : (profiles as any).results ?? []);
+      if (primary) setPrimaryProfileId(primary.id);
+    }).catch(() => {});
+  }, []);
 
   const hasAnyFilter = useMemo(
     () => !!(filters.status || filters.state || filters.q || filters.modality || filters.surface),
@@ -36,7 +49,8 @@ export const TournamentsPage: React.FC = () => {
     let cancel = false;
     setLoading(true);
     // Default ordering: upcoming first (start_date asc skips very old; -created_at as tiebreak)
-    listEditions({ ...filters, page, page_size: 20 })
+    const nearFilter = nearMe && primaryProfileId ? { near_profile: primaryProfileId } : {};
+    listEditions({ ...filters, ...nearFilter, page, page_size: 20 })
       .then((data) => {
         if (cancel) return;
         setItems(data.results);
@@ -47,7 +61,7 @@ export const TournamentsPage: React.FC = () => {
         if (!cancel) setLoading(false);
       });
     return () => { cancel = true; };
-  }, [filters, page]);
+  }, [filters, page, nearMe, primaryProfileId]);
 
   function applySearch() {
     setPage(1);
@@ -67,6 +81,22 @@ export const TournamentsPage: React.FC = () => {
         <p className="text-sm text-text-muted">Agregados de CBT, FPT e federações parceiras</p>
       </div>
 
+      <div className="flex items-center gap-2 flex-wrap">
+        {primaryProfileId && (
+          <button
+            onClick={() => { setNearMe((v) => !v); setPage(1); }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
+              nearMe
+                ? 'bg-accent-neon text-bg-base border-accent-neon'
+                : 'bg-bg-card border-border-subtle text-text-secondary hover:text-text-primary'
+            }`}
+            title="Mostrar torneios dentro do seu raio de viagem"
+          >
+            <MapPin className="w-4 h-4" />
+            Perto de mim
+          </button>
+        )}
+      </div>
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />

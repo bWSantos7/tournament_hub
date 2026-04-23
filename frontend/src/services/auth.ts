@@ -9,6 +9,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
 
 export async function register(payload: {
   email: string;
+  phone: string;
   password: string;
   password_confirm: string;
   full_name?: string;
@@ -71,12 +72,14 @@ export async function verifyEmailOtp(code: string): Promise<void> {
   await api.post('/api/auth/verify-email/', { code });
 }
 
-export async function sendPhoneOtp(phone: string): Promise<void> {
-  await api.post('/api/auth/send-phone-otp/', { phone });
-}
-
-export async function verifyPhoneOtp(code: string): Promise<void> {
-  await api.post('/api/auth/verify-phone/', { code });
+export async function uploadAvatar(file: File): Promise<import('../types').User> {
+  const form = new FormData();
+  form.append('avatar', file);
+  const res = await api.post<import('../types').User>('/api/auth/me/avatar/', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  localStorage.setItem(USER_KEY, JSON.stringify(res.data));
+  return res.data;
 }
 
 function persistAuth(data: LoginResponse) {

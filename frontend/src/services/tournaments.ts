@@ -17,6 +17,7 @@ export interface TournamentFilters {
   circuit?: string;
   surface?: string;
   organization?: number;
+  near_profile?: number;
   page?: number;
   page_size?: number;
   ordering?: string;

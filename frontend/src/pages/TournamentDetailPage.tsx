@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Calendar, MapPin, Clock, ExternalLink, Star, CheckCircle2,
-  XCircle, HelpCircle, Loader2, AlertTriangle, FileText, History,
+  XCircle, HelpCircle, Loader2, AlertTriangle, FileText, History, Share2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TournamentEditionDetail, EditionEligibility, PlayerProfile } from '../types';
@@ -25,6 +25,21 @@ export const TournamentDetailPage: React.FC = () => {
   const [watchingItemId, setWatchingItemId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [togglingWatch, setTogglingWatch] = useState(false);
+
+  async function handleShare() {
+    const url = window.location.href;
+    const title = ed?.title ?? 'Torneio';
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url });
+      } catch {
+        // user cancelled
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast.success('Link copiado!');
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -185,6 +200,12 @@ export const TournamentDetailPage: React.FC = () => {
             {watching ? 'Na sua agenda' : 'Acompanhar'}
           </button>
         </div>
+        <button
+          onClick={handleShare}
+          className="w-full btn-ghost flex items-center justify-center gap-2 text-sm border border-border-subtle rounded-xl py-2"
+        >
+          <Share2 className="w-4 h-4" /> Compartilhar torneio
+        </button>
 
         {regulation && (
           <a

@@ -4,7 +4,10 @@ export interface User {
   id: number;
   email: string;
   full_name: string;
+  phone: string;
+  avatar: string | null;
   role: Role;
+  email_verified: boolean;
   consent_version: string;
   consented_at: string | null;
   marketing_consent: boolean;
@@ -193,6 +196,17 @@ export interface EditionEligibility {
   }>;
 }
 
+export interface TournamentResult {
+  id: number;
+  category_played: string;
+  position: number | null;
+  wins: number;
+  losses: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WatchlistItem {
   id: number;
   edition: number;
@@ -203,6 +217,7 @@ export interface WatchlistItem {
   alert_on_deadline: boolean;
   alert_on_changes: boolean;
   alert_on_draws: boolean;
+  result: TournamentResult | null;
   created_at: string;
   updated_at: string;
 }
@@ -222,6 +237,20 @@ export interface Alert {
   dispatched_at: string | null;
   read_at: string | null;
   dedup_key: string;
+  created_at: string;
+}
+
+export interface CoachAthlete {
+  id: number;
+  athlete_detail: {
+    id: number;
+    email: string;
+    full_name: string;
+    avatar: string | null;
+    role: Role;
+  };
+  is_active: boolean;
+  notes: string;
   created_at: string;
 }
 

@@ -13,14 +13,14 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'email', 'full_name', 'phone', 'role',
-            'email_verified', 'phone_verified',
+            'id', 'email', 'full_name', 'phone', 'avatar', 'role',
+            'email_verified',
             'consent_version', 'consented_at', 'marketing_consent',
             'is_staff', 'created_at',
         )
         read_only_fields = (
             'id', 'is_staff', 'consent_version', 'consented_at', 'created_at',
-            'email_verified', 'phone_verified',
+            'email_verified',
         )
 
 
@@ -40,7 +40,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'email': {'required': True},
             'full_name': {'required': False, 'allow_blank': True},
-            'phone': {'required': True, 'allow_blank': False},
+            'phone': {'required': False, 'allow_blank': True},
             'role': {'required': False},
         }
 
@@ -97,3 +97,47 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('full_name', 'phone', 'role', 'marketing_consent')
+
+
+class AthleteUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'email', 'full_name', 'avatar', 'role')
+
+
+class CoachAthleteSerializer(serializers.ModelSerializer):
+    athlete_detail = AthleteUserSerializer(source='athlete', read_only=True)
+    athlete_email = serializers.EmailField(write_only=True)
+
+    class Meta:
+        from .models import CoachAthlete
+        model = CoachAthlete
+        fields = ('id', 'athlete_detail', 'athlete_email', 'is_active', 'notes', 'created_at')
+        read_only_fields = ('id', 'athlete_detail', 'created_at')
+
+    def validate_athlete_email(self, value):
+        try:
+            athlete = User.objects.get(email=value.lower(), is_active=True)
+        except User.DoesNotExist:
+            raise serializers.ValidationError('Nenhum usuário encontrado com esse email.')
+        return athlete
+
+    def validate(self, attrs):
+        coach = self.context['request'].user
+        athlete = attrs.get('athlete_email')
+        if athlete and athlete == coach:
+            raise serializers.ValidationError('Você não pode se adicionar como seu próprio aluno.')
+        return attrs
+
+    def create(self, validated_data):
+        from .models import CoachAthlete
+        athlete = validated_data.pop('athlete_email')
+        coach = self.context['request'].user
+        obj, created = CoachAthlete.objects.get_or_create(
+            coach=coach,
+            athlete=athlete,
+            defaults={'is_active': True, 'notes': validated_data.get('notes', '')},
+        )
+        if not created:
+            raise serializers.ValidationError('Esse aluno já está na sua lista.')
+        return obj

@@ -107,6 +107,8 @@ class PlayerProfile(TimestampedModel):
     )
     is_primary = models.BooleanField(default=True)
     external_ids = models.JSONField(default=dict, blank=True, help_text='CBT id, ITF id, etc')
+    home_lat = models.FloatField(null=True, blank=True)
+    home_lng = models.FloatField(null=True, blank=True)
 
     class Meta:
         ordering = ['-is_primary', '-created_at']

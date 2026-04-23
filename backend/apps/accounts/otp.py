@@ -3,7 +3,6 @@ import logging
 import random
 import string
 
-from django.conf import settings
 from django.core.cache import cache
 
 logger = logging.getLogger('apps.accounts')
@@ -51,21 +50,3 @@ def verify(user_id: int, otp_type: str, code: str) -> bool:
     return False
 
 
-def send_sms(phone: str, message: str) -> None:
-    """Send SMS via Twilio if configured, otherwise log (dev mode)."""
-    sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
-    token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
-    from_number = getattr(settings, 'TWILIO_FROM_NUMBER', '')
-
-    if sid and token and from_number:
-        try:
-            from twilio.rest import Client  # optional dependency
-            Client(sid, token).messages.create(body=message, from_=from_number, to=phone)
-            logger.info('SMS sent to %s', phone)
-        except ImportError:
-            logger.error('twilio package not installed. pip install twilio')
-        except Exception:
-            logger.exception('SMS delivery failed to %s', phone)
-    else:
-        # Development fallback — print OTP so developers can test without Twilio
-        logger.warning('[DEV] SMS to %s: %s', phone, message)

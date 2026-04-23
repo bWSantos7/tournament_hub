@@ -99,3 +99,20 @@ class Alert(TimestampedModel):
 
     def __str__(self):
         return f'[{self.kind}] {self.title} -> {self.user.email}'
+
+
+class PushSubscription(TimestampedModel):
+    """Stores a Web Push subscription for a user device."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='push_subscriptions'
+    )
+    endpoint = models.TextField(unique=True)
+    p256dh = models.TextField()
+    auth = models.TextField()
+    user_agent = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'PushSub<{self.user.email}>'

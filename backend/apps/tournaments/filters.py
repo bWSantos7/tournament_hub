@@ -1,6 +1,18 @@
+import math
+
 from django.db.models import Q
 from django_filters import rest_framework as filters
 from .models import TournamentEdition
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km between two (lat, lon) points."""
+    R = 6371.0
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    dφ = math.radians(lat2 - lat1)
+    dλ = math.radians(lon2 - lon1)
+    a = math.sin(dφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(dλ / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 class TournamentEditionFilter(filters.FilterSet):
@@ -15,13 +27,14 @@ class TournamentEditionFilter(filters.FilterSet):
     surface = filters.CharFilter(field_name='surface')
     status = filters.CharFilter(field_name='status')
     q = filters.CharFilter(method='filter_search')
+    near_profile = filters.NumberFilter(method='filter_near_profile')
 
     class Meta:
         model = TournamentEdition
         fields = [
             'from_date', 'to_date', 'state', 'city', 'organization',
             'organization_slug', 'modality', 'circuit', 'surface',
-            'status', 'q',
+            'status', 'q', 'near_profile',
         ]
 
     def filter_search(self, queryset, name, value):
@@ -38,3 +51,29 @@ class TournamentEditionFilter(filters.FilterSet):
         if not value:
             return queryset
         return queryset.filter(tournament__organization__short_name__iexact=value)
+
+    def filter_near_profile(self, queryset, name, value):
+        """Filter editions whose venue is within the profile's travel_radius_km."""
+        from apps.players.models import PlayerProfile
+        try:
+            profile = PlayerProfile.objects.get(
+                pk=value, user=self.request.user
+            )
+        except PlayerProfile.DoesNotExist:
+            return queryset
+
+        radius_km = profile.travel_radius_km or 100
+        # Pre-filter: only editions with geocoded venues
+        candidates = queryset.filter(
+            venue__latitude__isnull=False,
+            venue__longitude__isnull=False,
+        ).select_related('venue')
+
+        matching_ids = [
+            ed.id for ed in candidates
+            if _haversine_km(
+                profile.home_lat or 0, profile.home_lng or 0,
+                ed.venue.latitude, ed.venue.longitude,
+            ) <= radius_km
+        ]
+        return queryset.filter(id__in=matching_ids)

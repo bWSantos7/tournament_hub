@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from .models import Alert, UserAlertPreference
+from .models import Alert, PushSubscription, UserAlertPreference
 from .serializers import AlertSerializer, UserAlertPreferenceSerializer
 
 
@@ -50,3 +50,39 @@ def preferences(request):
     ser.is_valid(raise_exception=True)
     ser.save()
     return Response(ser.data)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def push_subscribe(request):
+    """Register or unregister a Web Push subscription."""
+    endpoint = (request.data.get('endpoint') or '').strip()
+    if not endpoint:
+        return Response({'detail': 'endpoint obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == 'DELETE':
+        PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+        return Response({'detail': 'Inscrição removida.'}, status=status.HTTP_204_NO_CONTENT)
+
+    keys = request.data.get('keys', {})
+    p256dh = keys.get('p256dh', '')
+    auth = keys.get('auth', '')
+    if not p256dh or not auth:
+        return Response({'detail': 'keys.p256dh e keys.auth são obrigatórios.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    sub, created = PushSubscription.objects.update_or_create(
+        endpoint=endpoint,
+        defaults={
+            'user': request.user,
+            'p256dh': p256dh,
+            'auth': auth,
+            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:300],
+        },
+    )
+    # Ensure push_enabled on preferences
+    prefs = UserAlertPreference.get_or_create_defaults(request.user)
+    if not prefs.push_enabled:
+        prefs.push_enabled = True
+        prefs.save(update_fields=['push_enabled', 'updated_at'])
+
+    return Response({'detail': 'Inscrição registrada.', 'created': created}, status=status.HTTP_200_OK)

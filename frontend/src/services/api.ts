@@ -9,6 +9,15 @@ function resolveBaseUrl(): string {
 
 const BASE_URL = resolveBaseUrl();
 
+/** Resolve a media URL — backend now returns absolute URLs via request context. */
+export function mediaUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith('http')) return path;
+  // Fallback for any relative paths still in localStorage cache
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${BASE_URL}${normalized}`;
+}
+
 export const TOKEN_KEY = 'th_access';
 export const REFRESH_KEY = 'th_refresh';
 export const USER_KEY = 'th_user';

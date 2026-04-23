@@ -15,13 +15,17 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from rest_framework import viewsets
+from rest_framework.decorators import action as viewset_action
 from .serializers import (
     RegisterSerializer,
     UserSerializer,
     UserUpdateSerializer,
     CustomTokenObtainPairSerializer,
     PasswordChangeSerializer,
+    CoachAthleteSerializer,
 )
+from .models import CoachAthlete
 
 logger = logging.getLogger('apps.accounts')
 
@@ -62,7 +66,7 @@ class RegisterView(generics.CreateAPIView):
         )
 
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'access': str(refresh.access_token),
             'refresh': str(refresh),
         }, status=status.HTTP_201_CREATED)
@@ -112,7 +116,26 @@ class MeView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         super().update(request, *args, **kwargs)
-        return Response(UserSerializer(self.get_object()).data)
+        return Response(UserSerializer(self.get_object(), context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def upload_avatar(request):
+    """Upload or replace the user's avatar image."""
+    file = request.FILES.get('avatar')
+    if not file:
+        return Response({'detail': 'Nenhuma imagem enviada.'}, status=status.HTTP_400_BAD_REQUEST)
+    if file.size > 5 * 1024 * 1024:
+        return Response({'detail': 'Imagem deve ter no máximo 5MB.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not file.content_type.startswith('image/'):
+        return Response({'detail': 'Arquivo deve ser uma imagem.'}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if user.avatar:
+        user.avatar.delete(save=False)
+    user.avatar = file
+    user.save(update_fields=['avatar'])
+    return Response(UserSerializer(user, context={'request': request}).data)
 
 
 @api_view(['POST'])
@@ -197,43 +220,6 @@ def verify_email_otp(request):
     return Response({'detail': 'Código inválido ou expirado.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-@throttle_classes([OtpThrottle])
-def send_phone_otp(request):
-    """Send 6-digit OTP via SMS to the given phone number."""
-    from .otp import generate_and_store, send_sms
-    phone = (request.data.get('phone') or '').strip()
-    if not phone:
-        phone = request.user.phone
-    if not phone:
-        return Response({'detail': 'Número de telefone obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    if phone != request.user.phone:
-        request.user.phone = phone
-        request.user.phone_verified = False
-        request.user.save(update_fields=['phone', 'phone_verified', 'updated_at'])
-
-    code = generate_and_store(request.user.id, 'phone')
-    send_sms(phone, f'Tournament Hub: seu código de verificação é {code}. Válido por 10 min.')
-    masked = f'{phone[:3]}***{phone[-2:]}' if len(phone) > 5 else '***'
-    return Response({'detail': f'Código enviado para {masked}.'})
-
-
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-def verify_phone_otp(request):
-    """Verify phone OTP and mark user's phone as verified."""
-    from .otp import verify
-    code = (request.data.get('code') or '').strip()
-    if not code:
-        return Response({'detail': 'Código obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
-    if verify(request.user.id, 'phone', code):
-        request.user.phone_verified = True
-        request.user.save(update_fields=['phone_verified', 'updated_at'])
-        return Response({'detail': 'Telefone verificado com sucesso.'})
-    return Response({'detail': 'Código inválido ou expirado.'}, status=status.HTTP_400_BAD_REQUEST)
-
 
 class PasswordResetRequestThrottle(AnonRateThrottle):
     rate = '5/hour'
@@ -280,6 +266,41 @@ def password_reset_request(request):
         logger.exception('Failed to send password reset email to %s — link: %s', email, reset_url)
 
     return Response({'detail': 'Se o email existir, enviaremos as instruções.'})
+
+
+class IsCoach(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'coach'
+
+
+class CoachAthleteViewSet(viewsets.ModelViewSet):
+    """Coaches manage their athlete roster and view athletes' watchlists."""
+    serializer_class = CoachAthleteSerializer
+    permission_classes = [IsCoach]
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        return (
+            CoachAthlete.objects
+            .filter(coach=self.request.user)
+            .select_related('athlete')
+            .order_by('-created_at')
+        )
+
+    @viewset_action(detail=True, methods=['get'], url_path='watchlist')
+    def athlete_watchlist(self, request, pk=None):
+        """Return watchlist items for one of the coach's athletes."""
+        from apps.watchlist.models import WatchlistItem
+        from apps.watchlist.serializers import WatchlistItemSerializer
+        link = self.get_object()
+        qs = (
+            WatchlistItem.objects
+            .filter(user=link.athlete)
+            .select_related('edition__tournament__organization', 'edition__venue', 'profile')
+            .order_by('-created_at')
+        )
+        serializer = WatchlistItemSerializer(qs, many=True, context={'request': request})
+        return Response({'athlete': link.athlete.email, 'watchlist': serializer.data})
 
 
 @api_view(['POST'])

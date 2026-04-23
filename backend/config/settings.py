@@ -39,6 +39,8 @@ THIRD_PARTY_APPS = [
     'drf_spectacular',
     'django_celery_beat',
     'django_celery_results',
+    'cloudinary_storage',
+    'cloudinary',
 ]
 
 LOCAL_APPS = [
@@ -129,8 +131,6 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -159,7 +159,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -173,6 +173,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '60/minute',
         'user': '300/minute',
+        'heavy_user': '30/minute',
+        'heavy_anon': '10/minute',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
@@ -227,37 +229,15 @@ CELERY_TASK_TIME_LIMIT = 30 * 60       # hard kill after 30 min
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # SoftTimeLimitExceeded raised at 25 min
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 50  # recycle worker after 50 tasks (prevent memory leaks)
 
-# Email
-# Supports two configuration styles:
-#   1. EMAIL_URL=smtp://user:pass@host:port  (recommended for Railway)
-#      e.g. smtp+tls://user%40gmail.com:app-pass@smtp.gmail.com:587
-#   2. Individual vars: EMAIL_HOST, EMAIL_PORT, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
-#
-# Free transactional email options for Railway:
-#   - Resend (resend.com) — set EMAIL_HOST=smtp.resend.com / EMAIL_HOST_USER=resend
-#   - Brevo (brevo.com)  — set EMAIL_HOST=smtp-relay.brevo.com / port 587
-#   - Gmail App Password — EMAIL_HOST=smtp.gmail.com / EMAIL_PORT=587
+# Email — uses Resend API when RESEND_API_KEY is set, falls back to console in dev
+RESEND_API_KEY = config('RESEND_API_KEY', default='')
 
-_email_url = config('EMAIL_URL', default='')
-if _email_url:
-    import urllib.parse as _up
-    _u = _up.urlparse(_email_url)
-    EMAIL_HOST = _u.hostname or 'localhost'
-    EMAIL_PORT = _u.port or 587
-    EMAIL_HOST_USER = _up.unquote(_u.username or '')
-    EMAIL_HOST_PASSWORD = _up.unquote(_u.password or '')
-    EMAIL_USE_TLS = _u.scheme in ('smtp+tls', 'smtp+starttls', 'smtps', 'submission')
-    EMAIL_USE_SSL = _u.scheme in ('smtps',)
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+if RESEND_API_KEY:
+    EMAIL_BACKEND = 'config.email_backend.ResendEmailBackend'
+elif DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 else:
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = config('EMAIL_HOST', default='localhost')
-    EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
-    EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
-    EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
-    EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
-    if not EMAIL_HOST_USER:
-        EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@tournamenthub.app')
 
@@ -291,6 +271,16 @@ SCRAPER_TIMEOUT = config('SCRAPER_TIMEOUT', default=30, cast=int)
 SCRAPER_RATE_LIMIT_SECONDS = config('SCRAPER_RATE_LIMIT_SECONDS', default=2, cast=int)
 
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
+# Media files (avatars etc.)
+# Set CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name in .env / Railway vars
+CLOUDINARY_URL = config('CLOUDINARY_URL', default='')
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+if CLOUDINARY_URL:
+    # Expose to env so the cloudinary SDK and django-cloudinary-storage both pick it up
+    os.environ['CLOUDINARY_URL'] = CLOUDINARY_URL
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 # DRF Spectacular
 SPECTACULAR_SETTINGS = {

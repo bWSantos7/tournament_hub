@@ -14,6 +14,8 @@ import { WatchlistPage } from './pages/WatchlistPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminPanelPage } from './pages/AdminPanelPage';
+import { ResultsPage } from './pages/ResultsPage';
+import { CoachPage } from './pages/CoachPage';
 
 const App: React.FC = () => {
   return (
@@ -66,8 +68,10 @@ const App: React.FC = () => {
         <Route path="torneios" element={<TournamentsPage />} />
         <Route path="torneios/:id" element={<TournamentDetailPage />} />
         <Route path="watchlist" element={<WatchlistPage />} />
+        <Route path="resultados" element={<ResultsPage />} />
         <Route path="alertas" element={<AlertsPage />} />
         <Route path="perfil" element={<ProfilePage />} />
+        <Route path="treinador" element={<CoachPage />} />
         <Route
           path="admin-panel"
           element={

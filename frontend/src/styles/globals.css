@@ -2,8 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Dark theme (default) ─────────────────────────────────────────────────── */
 :root {
   color-scheme: dark;
+  --bg-base:     13 13 13;
+  --bg-card:     31 31 31;
+  --bg-elevated: 42 42 42;
+  --bg-subtle:   23 23 23;
+  --text-primary:   255 255 255;
+  --text-secondary: 184 184 184;
+  --text-muted:     122 122 122;
+  --border-subtle:  47 47 47;
+}
+
+/* ─── Light theme ───────────────────────────────────────────────────────────── */
+.light {
+  color-scheme: light;
+  --bg-base:     248 250 252;
+  --bg-card:     255 255 255;
+  --bg-elevated: 241 245 249;
+  --bg-subtle:   248 250 252;
+  --text-primary:   15 23 42;
+  --text-secondary: 71 85 105;
+  --text-muted:     148 163 184;
+  --border-subtle:  226 232 240;
 }
 
 html, body, #root {
@@ -13,11 +35,12 @@ html, body, #root {
 }
 
 body {
-  background-color: #0D0D0D;
-  color: #FFFFFF;
+  background-color: rgb(var(--bg-base));
+  color: rgb(var(--text-primary));
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 @layer base {
@@ -28,11 +51,12 @@ body {
     background: transparent;
     color: inherit;
   }
+  /* Dark autofill */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #FFFFFF;
-    -webkit-box-shadow: 0 0 0 30px #1F1F1F inset !important;
+    -webkit-text-fill-color: rgb(var(--text-primary));
+    -webkit-box-shadow: 0 0 0 30px rgb(var(--bg-card)) inset !important;
     transition: background-color 5000s ease-in-out 0s;
   }
 }
@@ -65,17 +89,14 @@ body {
   }
 }
 
-/* Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* ─── Scrollbars ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #2F2F2F;
+  background: rgb(var(--border-subtle));
   border-radius: 8px;
 }
-::-webkit-scrollbar-thumb:hover { background: #3F3F3F; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--bg-elevated)); }
 
-/* Toast container z-index */
+/* Toast z-index */
 [data-react-hot-toast] { z-index: 9999; }

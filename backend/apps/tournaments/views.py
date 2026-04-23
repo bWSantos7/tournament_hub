@@ -10,6 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.permissions import IsAdmin
+from apps.core.throttles import HeavyUserThrottle
 from .filters import TournamentEditionFilter
 from .models import Tournament, TournamentCategory, TournamentEdition
 from .serializers import (
@@ -36,7 +37,7 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_class = TournamentEditionFilter
     search_fields = ('title', 'tournament__canonical_name')
     ordering_fields = ('start_date', 'entry_close_at', 'created_at')
-    ordering = ('-created_at',)  # newest additions first by default
+    ordering = ('-start_date',)  # most recent tournament date first by default
 
     def get_queryset(self):
         return (
@@ -117,7 +118,7 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], throttle_classes=[HeavyUserThrottle])
     def calendar(self, request):
         qs = self.filter_queryset(self.get_queryset()).filter(start_date__isnull=False)
         buckets = defaultdict(list)
@@ -126,7 +127,7 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
             buckets[key].append(TournamentEditionListSerializer(edition).data)
         return Response([{'month': key, 'items': value} for key, value in sorted(buckets.items())])
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], throttle_classes=[HeavyUserThrottle])
     def compatible(self, request):
         from apps.eligibility.services import EligibilityEngine
         from apps.eligibility.location import within_profile_radius

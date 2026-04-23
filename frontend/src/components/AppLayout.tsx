@@ -1,12 +1,14 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Home, Calendar, Star, Bell, User, LogOut, Trophy, ShieldCheck } from 'lucide-react';
+import { Home, Calendar, Star, Bell, User, LogOut, Trophy, ShieldCheck, Sun, Moon, Users, Award } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 const navItems = [
   { to: '/', label: 'Início', icon: Home, end: true },
   { to: '/torneios', label: 'Torneios', icon: Calendar, end: false },
   { to: '/watchlist', label: 'Agenda', icon: Star, end: false },
+  { to: '/resultados', label: 'Resultados', icon: Award, end: false },
   { to: '/alertas', label: 'Alertas', icon: Bell, end: false },
   { to: '/perfil', label: 'Perfil', icon: User, end: false },
 ];
@@ -14,6 +16,7 @@ const navItems = [
 export const AppLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { theme, toggle: toggleTheme } = useTheme();
 
   const handleLogout = async () => {
     await logout();
@@ -33,7 +36,17 @@ export const AppLayout: React.FC = () => {
               <div className="text-[10px] text-text-muted leading-tight">Tênis • Brasil</div>
             </div>
           </NavLink>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {user?.role === 'coach' && (
+              <NavLink
+                to="/treinador"
+                className="btn-ghost flex items-center gap-1 text-xs"
+                title="Meus alunos"
+              >
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline">Alunos</span>
+              </NavLink>
+            )}
             {user?.is_staff && (
               <NavLink
                 to="/admin-panel"
@@ -44,6 +57,13 @@ export const AppLayout: React.FC = () => {
                 <span className="hidden sm:inline">Admin</span>
               </NavLink>
             )}
+            <button
+              onClick={toggleTheme}
+              className="btn-ghost !px-2"
+              title={theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
             <button
               onClick={handleLogout}
               className="btn-ghost flex items-center gap-1 text-xs"
@@ -61,7 +81,7 @@ export const AppLayout: React.FC = () => {
       </main>
 
       <nav className="fixed bottom-0 inset-x-0 z-30 bg-bg-card/95 backdrop-blur-lg border-t border-border-subtle">
-        <div className="mx-auto max-w-5xl px-2 h-16 grid grid-cols-5">
+        <div className="mx-auto max-w-5xl px-2 h-16 grid grid-cols-6">
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}

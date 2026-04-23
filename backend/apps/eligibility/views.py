@@ -1,5 +1,5 @@
 from rest_framework import viewsets, permissions
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers as rf_serializers
@@ -9,6 +9,7 @@ from .services import EligibilityEngine
 from apps.players.models import PlayerProfile
 from apps.tournaments.models import TournamentEdition
 from apps.core.permissions import IsAdminOrReadOnly
+from apps.core.throttles import HeavyUserThrottle
 
 
 class RuleSetSerializer(rf_serializers.ModelSerializer):
@@ -57,6 +58,7 @@ class RuleClauseViewSet(viewsets.ModelViewSet):
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
+@throttle_classes([HeavyUserThrottle])
 def evaluate_edition(request, edition_id):
     """GET /api/eligibility/evaluate/?profile_id=X&edition_id=Y"""
     profile_id = request.query_params.get('profile_id')

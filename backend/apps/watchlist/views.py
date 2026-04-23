@@ -3,8 +3,8 @@ from datetime import timedelta
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import WatchlistItem
-from .serializers import WatchlistItemSerializer
+from .models import WatchlistItem, TournamentResult
+from .serializers import WatchlistItemSerializer, TournamentResultSerializer
 from apps.tournaments.models import TournamentEdition
 
 
@@ -43,6 +43,23 @@ class WatchlistViewSet(viewsets.ModelViewSet):
                 for s in WatchlistItem.STATUS_CHOICES
             },
         })
+
+    @action(detail=True, methods=['post', 'patch', 'delete'], url_path='result')
+    def save_result(self, request, pk=None):
+        """Create or update the result for a completed watchlist item."""
+        item = self.get_object()
+        if request.method == 'DELETE':
+            TournamentResult.objects.filter(watchlist_item=item).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        result_obj, _ = TournamentResult.objects.get_or_create(watchlist_item=item)
+        ser = TournamentResultSerializer(result_obj, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        # Automatically mark item as completed when a result is saved
+        if item.user_status != WatchlistItem.STATUS_COMPLETED:
+            item.user_status = WatchlistItem.STATUS_COMPLETED
+            item.save(update_fields=['user_status', 'updated_at'])
+        return Response(ser.data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='toggle')
     def toggle(self, request):
