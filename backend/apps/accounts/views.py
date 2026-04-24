@@ -50,20 +50,25 @@ class RegisterView(generics.CreateAPIView):
 
         # Send email OTP automatically after registration
         from .otp import generate_and_store
-        from django.core.mail import send_mail
+        from django.core.mail import send_mail as _send_mail
+        import sys
         code = generate_and_store(user.id, 'email')
-        send_mail(
-            subject='[Tennis Hub] Verifique seu e-mail',
-            message=(
-                f'Olá {user.full_name or user.email}!\n\n'
-                f'Seu código de verificação de e-mail é:\n\n'
-                f'  {code}\n\n'
-                f'Válido por 10 minutos. Não compartilhe com ninguém.'
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        try:
+            _send_mail(
+                subject='[Tournament Hub] Verifique seu e-mail',
+                message=(
+                    f'Olá {user.full_name or user.email}!\n\n'
+                    f'Seu código de verificação de e-mail é:\n\n'
+                    f'  {code}\n\n'
+                    f'Válido por 10 minutos. Não compartilhe com ninguém.'
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception as exc:
+            print(f'[OTP] Email send failed for {user.email}: {exc}', file=sys.stderr, flush=True)
+            logger.error('OTP email failed for user %s: %s', user.id, exc)
 
         return Response({
             'user': UserSerializer(user, context={'request': request}).data,
@@ -190,18 +195,24 @@ def send_email_otp(request):
     """Send 6-digit OTP to the authenticated user's email."""
     from .otp import generate_and_store
     from django.core.mail import send_mail as _send_mail
+    import sys
     user = request.user
     code = generate_and_store(user.id, 'email')
-    _send_mail(
-        subject='[Tennis Hub] Código de verificação de e-mail',
-        message=(
-            f'Seu código de verificação é:\n\n  {code}\n\n'
-            f'Válido por 10 minutos. Não compartilhe com ninguém.'
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-        fail_silently=True,
-    )
+    try:
+        _send_mail(
+            subject='[Tournament Hub] Código de verificação de e-mail',
+            message=(
+                f'Seu código de verificação é:\n\n  {code}\n\n'
+                f'Válido por 10 minutos. Não compartilhe com ninguém.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        print(f'[OTP] Resend failed for {user.email}: {exc}', file=sys.stderr, flush=True)
+        logger.error('OTP resend failed for user %s: %s', user.id, exc)
+        return Response({'detail': f'Não foi possível enviar o código. Tente novamente em instantes.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     return Response({'detail': f'Código enviado para {user.email}.'})
 
 

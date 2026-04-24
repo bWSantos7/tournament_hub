@@ -242,6 +242,11 @@ else:
 
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@tournamenthub.app')
 
+# Resend-specific from address.
+# If domain is not verified in Resend, set this to: onboarding@resend.dev
+# Once tournamenthub.app domain is verified in Resend dashboard, set to: no-reply@tournamenthub.app
+RESEND_FROM_EMAIL = config('RESEND_FROM_EMAIL', default=DEFAULT_FROM_EMAIL)
+
 # Security settings (production)
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
