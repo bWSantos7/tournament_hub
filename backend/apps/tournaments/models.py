@@ -186,6 +186,10 @@ class TournamentCategory(TimestampedModel):
         related_name='tournament_categories'
     )
     price_brl = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    max_participants = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Limite de vagas nesta categoria. Null = sem limite definido.'
+    )
     visibility_order = models.PositiveIntegerField(default=0)
     notes = models.CharField(max_length=300, blank=True)
 

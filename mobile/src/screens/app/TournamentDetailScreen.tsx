@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, Share, View } from 'react-native';
+import { Linking, Modal, Pressable, Share, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { MainStackParamList } from '../../navigation/types';
 import { useTheme } from '../../contexts/ThemeContext';
-import { AppText, Button, Card, EmptyState, LoadingBlock, Screen, SectionHeader } from '../../components/ui';
-import { TournamentEditionDetail } from '../../types';
+import { AppText, Button, Card, EmptyState, Input, LoadingBlock, Screen, SectionHeader, SelectField } from '../../components/ui';
+import { TournamentEditionDetail, TournamentRegistration } from '../../types';
 import { getEdition, evaluateEdition, editionHistory } from '../../services/tournaments';
 import { listProfiles, toggleWatchlist } from '../../services/data';
+import { myRegistrations, registerForEdition, withdrawRegistration } from '../../services/registrations';
 import { pickBestProfile } from '../../utils/profile';
 import { fmtBRL, fmtDateRange, formatChangeEventDetails, formatChangeEventTitle, translateReason, STATUS_LABELS } from '../../utils/format';
 import { extractApiError } from '../../services/api';
@@ -27,6 +28,13 @@ const STATUS_COLORS: Record<string, string> = {
   draw_published: '#8b5cf6',
 };
 
+const REG_STATUS_CONFIG: Record<string, { color: string; icon: string }> = {
+  confirmed: { color: '#39ff14', icon: 'checkmark-circle' },
+  waiting_list: { color: '#f59e0b', icon: 'time' },
+  pending_payment: { color: '#3b82f6', icon: 'card' },
+  withdrawn: { color: '#6b7280', icon: 'close-circle' },
+};
+
 export function TournamentDetailScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
   const id = route.params.id;
@@ -39,6 +47,8 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
   const [watching, setWatching] = useState(false);
   const [togglingWatch, setTogglingWatch] = useState(false);
   const [showAllCategories, setShowAllCategories] = useState(false);
+  const [myReg, setMyReg] = useState<TournamentRegistration | null>(null);
+  const [showRegModal, setShowRegModal] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -46,11 +56,17 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
     try {
       const d = await getEdition(id);
       setDetail(d);
-      const [profiles, hist] = await Promise.all([
+      const [profiles, hist, regs] = await Promise.all([
         listProfiles().catch(() => []),
         editionHistory(id).catch(() => []),
+        myRegistrations().catch(() => []),
       ]);
       setHistory(hist as any[]);
+      // Find any existing registration for this edition
+      const existing = (regs as TournamentRegistration[]).find(
+        (r) => r.edition_id === id && !r.is_withdrawn
+      );
+      setMyReg(existing ?? null);
       const primary = pickBestProfile(profiles as any[]);
       if (primary) {
         const elig = await evaluateEdition(id, primary.id).catch(() => null);
@@ -65,6 +81,17 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
   }
 
   useEffect(() => { load(); }, [id]);
+
+  async function onShare() {
+    if (!detail) return;
+    try {
+      await Share.share({
+        title: detail.title,
+        message: `${detail.title}${detail.official_source_url ? `\n${detail.official_source_url}` : ''}`,
+        url: detail.official_source_url || undefined,
+      });
+    } catch {}
+  }
 
   async function onToggleWatch() {
     if (!detail) return;
@@ -82,15 +109,15 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
     }
   }
 
-  async function onShare() {
-    if (!detail) return;
+  async function onWithdraw() {
+    if (!myReg) return;
     try {
-      await Share.share({
-        title: detail.title,
-        message: `${detail.title}${detail.official_source_url ? `\n${detail.official_source_url}` : ''}`,
-        url: detail.official_source_url || undefined,
-      });
-    } catch {}
+      await withdrawRegistration(myReg.id);
+      setMyReg(null);
+      Toast.show({ type: 'success', text1: 'Inscrição cancelada.' });
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao cancelar', text2: extractApiError(err) });
+    }
   }
 
   const statusColor = detail ? (STATUS_COLORS[detail.status] ?? colors.textMuted) : colors.textMuted;
@@ -131,6 +158,7 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
   }
 
   const visibleCategories = showAllCategories ? detail.categories : detail.categories.slice(0, 3);
+  const regSC = myReg ? (REG_STATUS_CONFIG[myReg.registration_status] ?? REG_STATUS_CONFIG.pending_payment) : null;
 
   return (
     <Screen>
@@ -202,6 +230,58 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
         </View>
       </Card>
 
+      {/* My Registration status */}
+      {myReg && regSC ? (
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Ionicons name={regSC.icon as any} size={20} color={regSC.color} />
+            <AppText variant="body" style={{ fontWeight: '700', color: regSC.color }}>
+              {myReg.registration_status_label}
+            </AppText>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {myReg.slot_position != null ? (
+              <View style={{ flex: 1, backgroundColor: colors.bgBase, borderRadius: 12, padding: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.borderSubtle }}>
+                <AppText variant="caption" style={{ color: colors.textMuted }}>Posição</AppText>
+                <AppText variant="body" style={{ fontWeight: '700', fontSize: 24, color: myReg.in_draw ? colors.accentNeon : colors.textPrimary }}>
+                  #{myReg.slot_position}
+                </AppText>
+                {myReg.max_participants ? (
+                  <AppText variant="caption" style={{ color: myReg.in_draw ? colors.accentNeon : '#ef4444', textAlign: 'center' }}>
+                    {myReg.in_draw ? 'Na chave' : `Fora (limite ${myReg.max_participants})`}
+                  </AppText>
+                ) : null}
+              </View>
+            ) : null}
+            <View style={{ flex: 1, backgroundColor: colors.bgBase, borderRadius: 12, padding: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.borderSubtle }}>
+              <AppText variant="caption" style={{ color: colors.textMuted }}>Pagamento</AppText>
+              <Ionicons
+                name={myReg.payment_status === 'paid' || myReg.payment_status === 'waived' ? 'checkmark-circle' : 'time'}
+                size={22}
+                color={myReg.payment_status === 'paid' || myReg.payment_status === 'waived' ? colors.accentNeon : '#f59e0b'}
+                style={{ marginVertical: 2 }}
+              />
+              <AppText variant="caption" style={{ color: myReg.payment_status === 'paid' || myReg.payment_status === 'waived' ? colors.accentNeon : '#f59e0b', fontWeight: '600' }}>
+                {myReg.payment_status_label}
+              </AppText>
+            </View>
+            {myReg.category_text ? (
+              <View style={{ flex: 1, backgroundColor: colors.bgBase, borderRadius: 12, padding: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.borderSubtle }}>
+                <AppText variant="caption" style={{ color: colors.textMuted }}>Categoria</AppText>
+                <AppText variant="caption" style={{ fontWeight: '600', textAlign: 'center', marginTop: 4 }}>{myReg.category_text}</AppText>
+              </View>
+            ) : null}
+          </View>
+          <Button title="Cancelar minha inscrição" variant="danger" onPress={onWithdraw} style={{ marginTop: 4 }} />
+        </Card>
+      ) : (
+        /* Register button */
+        <Button
+          title="Inscrever-se neste torneio"
+          onPress={() => setShowRegModal(true)}
+        />
+      )}
+
       {/* Eligibility */}
       {eligibility && (
         <View>
@@ -233,7 +313,14 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
         <View>
           {visibleCategories.map((c) => (
             <Card key={c.id}>
-              <AppText variant="body" style={{ fontWeight: '700' }}>{c.source_category_text}</AppText>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <AppText variant="body" style={{ fontWeight: '700', flex: 1 }}>{c.source_category_text}</AppText>
+                {c.max_participants ? (
+                  <View style={{ backgroundColor: `${colors.accentBlue}22`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                    <AppText variant="caption" style={{ color: colors.accentBlue, fontWeight: '600' }}>{c.max_participants} vagas</AppText>
+                  </View>
+                ) : null}
+              </View>
               {c.price_brl != null && <AppText variant="caption">Valor: {fmtBRL(c.price_brl)}</AppText>}
               {c.notes ? <AppText variant="muted">{c.notes}</AppText> : null}
             </Card>
@@ -279,6 +366,91 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
           ))}
         </View>
       )}
+
+      {/* Registration Modal */}
+      <RegistrationModal
+        visible={showRegModal}
+        onClose={() => setShowRegModal(false)}
+        detail={detail}
+        colors={colors}
+        onSuccess={(reg) => { setMyReg(reg); setShowRegModal(false); }}
+      />
     </Screen>
+  );
+}
+
+function RegistrationModal({ visible, onClose, detail, colors, onSuccess }: {
+  visible: boolean;
+  onClose: () => void;
+  detail: TournamentEditionDetail;
+  colors: any;
+  onSuccess: (reg: TournamentRegistration) => void;
+}) {
+  const [categoryId, setCategoryId] = useState<string>('');
+  const [rankingPosition, setRankingPosition] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const categoryOptions = detail.categories.map((c) => ({
+    value: String(c.id),
+    label: c.source_category_text,
+  }));
+
+  async function submit() {
+    setSubmitting(true);
+    try {
+      const reg = await registerForEdition({
+        edition: detail.id,
+        category: categoryId ? Number(categoryId) : null,
+        ranking_position: rankingPosition ? Number(rankingPosition) : null,
+      });
+      Toast.show({ type: 'success', text1: 'Inscrição realizada!', text2: reg.registration_status_label });
+      onSuccess(reg);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao se inscrever', text2: extractApiError(err) });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={{ ...require('react-native').StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose} />
+        <View style={{ backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 16 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <AppText variant="section">Inscrever-se</AppText>
+            <Pressable onPress={onClose} style={{ padding: 4 }}>
+              <Ionicons name="close" size={22} color={colors.textMuted} />
+            </Pressable>
+          </View>
+          <AppText variant="muted" numberOfLines={2}>{detail.title}</AppText>
+
+          {categoryOptions.length > 0 ? (
+            <SelectField
+              label="Categoria"
+              value={categoryId}
+              options={[{ value: '', label: 'Sem categoria específica' }, ...categoryOptions]}
+              onSelect={setCategoryId}
+              placeholder="Selecione a categoria"
+            />
+          ) : null}
+
+          <Input
+            label="Posição no ranking (opcional)"
+            value={rankingPosition}
+            onChangeText={(v) => setRankingPosition(v.replace(/\D/g, ''))}
+            keyboardType="number-pad"
+            placeholder="Ex: 15 (deixe em branco se não souber)"
+          />
+
+          <AppText variant="muted" style={{ fontSize: 11 }}>
+            A confirmação da vaga depende do pagamento da inscrição. Você receberá a posição na lista após se inscrever.
+          </AppText>
+
+          <Button title="Confirmar inscrição" onPress={submit} loading={submitting} />
+          <Button title="Cancelar" variant="ghost" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
   );
 }

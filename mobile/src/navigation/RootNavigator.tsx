@@ -10,6 +10,7 @@ import { TournamentDetailScreen } from '../screens/app/TournamentDetailScreen';
 import { OnboardingScreen } from '../screens/app/OnboardingScreen';
 import { CoachScreen } from '../screens/app/CoachScreen';
 import { AdminPanelScreen } from '../screens/app/AdminPanelScreen';
+import { MyRegistrationsScreen } from '../screens/app/MyRegistrationsScreen';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
@@ -34,6 +35,7 @@ export function RootNavigator() {
       <MainStack.Screen name="Onboarding" component={OnboardingScreen} />
       <MainStack.Screen name="Coach" component={CoachScreen} />
       <MainStack.Screen name="AdminPanel" component={AdminPanelScreen} />
+      <MainStack.Screen name="MyRegistrations" component={MyRegistrationsScreen} />
     </MainStack.Navigator>
   );
 }

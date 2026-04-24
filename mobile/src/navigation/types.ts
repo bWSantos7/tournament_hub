@@ -21,4 +21,5 @@ export type MainStackParamList = {
   Onboarding: undefined;
   Coach: undefined;
   AdminPanel: undefined;
+  MyRegistrations: undefined;
 };

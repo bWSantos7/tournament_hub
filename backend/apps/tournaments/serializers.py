@@ -27,7 +27,7 @@ class TournamentCategorySerializer(serializers.ModelSerializer):
         fields = (
             'id', 'source_category_text',
             'normalized_category', 'normalized_category_detail',
-            'price_brl', 'visibility_order', 'notes',
+            'price_brl', 'max_participants', 'visibility_order', 'notes',
         )
 
 

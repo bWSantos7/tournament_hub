@@ -130,8 +130,34 @@ export interface TournamentCategory {
   normalized_category: number | null;
   normalized_category_detail: PlayerCategory | null;
   price_brl: string | null;
+  max_participants: number | null;
   visibility_order: number;
   notes: string;
+}
+
+export type RegistrationStatus = 'confirmed' | 'waiting_list' | 'pending_payment' | 'withdrawn';
+export type PaymentStatus = 'pending' | 'paid' | 'waived' | 'refunded';
+
+export interface TournamentRegistration {
+  id: number;
+  edition_id: number;
+  edition_title: string;
+  edition_start_date: string | null;
+  edition_end_date: string | null;
+  edition_status: string;
+  category_text: string | null;
+  max_participants: number | null;
+  registered_at: string;
+  ranking_position: number | null;
+  payment_status: PaymentStatus;
+  payment_status_label: string;
+  payment_confirmed_at: string | null;
+  is_withdrawn: boolean;
+  withdrawn_at: string | null;
+  slot_position: number | null;
+  in_draw: boolean | null;
+  registration_status: RegistrationStatus;
+  registration_status_label: string;
 }
 
 export interface TournamentChangeEvent {
