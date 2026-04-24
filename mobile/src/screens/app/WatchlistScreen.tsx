@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,6 +12,29 @@ import { TournamentCard } from '../../components/TournamentCard';
 import { listWatchlist, watchlistSummary } from '../../services/data';
 import { WatchlistItem } from '../../types';
 
+function detectConflicts(items: WatchlistItem[]): Set<number> {
+  const conflicting = new Set<number>();
+  const active = items.filter((item) => {
+    const s = item.edition_detail.dynamic_status || item.edition_detail.status;
+    return item.edition_detail.start_date && !['finished', 'canceled'].includes(s);
+  });
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i].edition_detail;
+      const b = active[j].edition_detail;
+      const aStart = new Date(a.start_date!);
+      const aEnd = a.end_date ? new Date(a.end_date) : aStart;
+      const bStart = new Date(b.start_date!);
+      const bEnd = b.end_date ? new Date(b.end_date) : bStart;
+      if (aStart <= bEnd && bStart <= aEnd) {
+        conflicting.add(active[i].id);
+        conflicting.add(active[j].id);
+      }
+    }
+  }
+  return conflicting;
+}
+
 type Props = BottomTabScreenProps<MainTabParamList, 'Watchlist'>;
 type StackNav = NativeStackNavigationProp<MainStackParamList>;
 
@@ -21,6 +44,7 @@ export function WatchlistScreen(_: Props) {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [summary, setSummary] = useState<any>(null);
+  const [conflicts, setConflicts] = useState<Set<number>>(new Set());
 
   useFocusEffect(
     useCallback(() => {
@@ -33,8 +57,10 @@ export function WatchlistScreen(_: Props) {
             watchlistSummary().catch(() => null),
           ]);
           if (!active) return;
-          setItems(wl as WatchlistItem[]);
+          const list = wl as WatchlistItem[];
+          setItems(list);
           setSummary(sm);
+          setConflicts(detectConflicts(list));
         } catch {
           Toast.show({ type: 'error', text1: 'Erro ao carregar agenda' });
         } finally {
@@ -71,17 +97,34 @@ export function WatchlistScreen(_: Props) {
         </Card>
       ) : null}
 
+      {/* Conflict warning */}
+      {conflicts.size > 0 && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f59e0b18', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#f59e0b44', marginBottom: 4 }}>
+          <Ionicons name="warning-outline" size={18} color="#f59e0b" />
+          <AppText variant="caption" style={{ flex: 1, color: '#f59e0b' }}>
+            {`${conflicts.size} torneio${conflicts.size > 1 ? 's' : ''} com datas sobrepostas na sua agenda.`}
+          </AppText>
+        </View>
+      )}
+
       {loading ? (
         <LoadingBlock />
       ) : items.length === 0 ? (
         <EmptyState title="Sua agenda está vazia." subtitle="Adicione torneios pela tela de detalhes." />
       ) : (
         items.map((item) => (
-          <TournamentCard
-            key={item.id}
-            edition={item.edition_detail}
-            onPress={() => navigation.navigate('TournamentDetail', { id: item.edition_detail.id, edition: item.edition_detail })}
-          />
+          <View key={item.id}>
+            {conflicts.has(item.id) && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: -4, paddingHorizontal: 4 }}>
+                <Ionicons name="warning" size={12} color="#f59e0b" />
+                <AppText variant="caption" style={{ color: '#f59e0b', fontSize: 10 }}>Conflito de datas</AppText>
+              </View>
+            )}
+            <TournamentCard
+              edition={item.edition_detail}
+              onPress={() => navigation.navigate('TournamentDetail', { id: item.edition_detail.id, edition: item.edition_detail })}
+            />
+          </View>
         ))
       )}
     </Screen>

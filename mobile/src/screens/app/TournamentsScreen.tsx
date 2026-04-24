@@ -1,38 +1,323 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { MainStackParamList, MainTabParamList } from '../../navigation/types';
-import { AppText, Button, EmptyState, Input, LoadingBlock, Screen, SectionHeader } from '../../components/ui';
+import { useTheme } from '../../contexts/ThemeContext';
+import { AppText, EmptyState, Input, LoadingBlock, Screen } from '../../components/ui';
 import { TournamentCard } from '../../components/TournamentCard';
 import { TournamentEditionList } from '../../types';
-import { listEditions } from '../../services/tournaments';
+import { calendar, listEditions } from '../../services/tournaments';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Tournaments'>;
 type StackNav = NativeStackNavigationProp<MainStackParamList>;
+type ViewMode = 'list' | 'calendar';
+
+const MONTHS_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const WEEKDAYS_PT = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const TODAY = new Date().toISOString().slice(0, 10);
+
+const STATUS_FILTERS = [
+  { key: '', label: 'Todos' },
+  { key: 'open', label: 'Abertos' },
+  { key: 'closing_soon', label: 'Fechando' },
+  { key: 'announced', label: 'Anunciados' },
+];
+
+const CIRCUIT_FILTERS = [
+  { key: 'CBT', label: 'CBT' },
+  { key: 'FPT', label: 'FPT' },
+  { key: 'COSAT', label: 'COSAT' },
+  { key: 'ITF', label: 'ITF' },
+  { key: 'UTR', label: 'UTR' },
+];
 
 export function TournamentsScreen(_: Props) {
+  const { colors } = useTheme();
   const navigation = useNavigation<StackNav>();
+
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<TournamentEditionList[]>([]);
+  const [calendarMap, setCalendarMap] = useState<Record<string, TournamentEditionList[]>>({});
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [circuitFilter, setCircuitFilter] = useState('');
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [calMonth, setCalMonth] = useState(() => new Date());
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function load() {
+  async function loadList(q = query, status = statusFilter, circuit = circuitFilter) {
     setLoading(true);
-    try { const data = await listEditions({ page_size: 20, q: query || undefined }); setItems(data.results || []); }
-    catch { Toast.show({ type: 'error', text1: 'Erro ao carregar torneios' }); }
-    finally { setLoading(false); }
+    try {
+      const data = await listEditions({
+        page_size: 30,
+        q: q || undefined,
+        status: status || undefined,
+        circuit: circuit || undefined,
+      });
+      setItems(data.results || []);
+    } catch {
+      Toast.show({ type: 'error', text1: 'Erro ao carregar torneios' });
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load(); }, []);
+  async function loadCalendar() {
+    setLoading(true);
+    try {
+      const months = await calendar();
+      const map: Record<string, TournamentEditionList[]> = {};
+      months.forEach((m) => {
+        m.items.forEach((ed) => {
+          if (ed.start_date) {
+            const key = ed.start_date.slice(0, 10);
+            if (!map[key]) map[key] = [];
+            map[key].push(ed);
+          }
+        });
+      });
+      setCalendarMap(map);
+    } catch {
+      Toast.show({ type: 'error', text1: 'Erro ao carregar calendário' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (viewMode === 'list') loadList();
+    else loadCalendar();
+  }, [viewMode]);
+
+  function onQueryChange(v: string) {
+    setQuery(v);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => loadList(v, statusFilter, circuitFilter), 500);
+  }
+
+  function onStatusFilter(key: string) {
+    const next = statusFilter === key ? '' : key;
+    setStatusFilter(next);
+    loadList(query, next, circuitFilter);
+  }
+
+  function onCircuitFilter(key: string) {
+    const next = circuitFilter === key ? '' : key;
+    setCircuitFilter(next);
+    loadList(query, statusFilter, next);
+  }
+
+  const year = calMonth.getFullYear();
+  const month = calMonth.getMonth();
+  const firstDayOfMonth = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  function dayKey(day: number) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  const selectedDayItems = selectedDate ? (calendarMap[selectedDate] ?? []) : [];
 
   return (
-    <Screen>
-      <SectionHeader title="Torneios" subtitle="Explore os torneios agregados pelo hub" />
-      <Input value={query} onChangeText={setQuery} placeholder="Buscar por nome, cidade, circuito..." />
-      <Button title="Buscar" onPress={load} />
-      {loading ? <LoadingBlock /> : items.length === 0 ? <EmptyState title="Nenhum torneio encontrado." subtitle="Tente ajustar sua busca." /> : items.map((ed) => <TournamentCard key={ed.id} edition={ed} onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)}
+    <Screen scroll={false}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <View>
+          <AppText variant="title">Torneios</AppText>
+          <AppText variant="caption" style={{ color: colors.textMuted }}>Torneios infantojuvenis agregados</AppText>
+        </View>
+        <View style={{ flexDirection: 'row', backgroundColor: colors.bgCard, borderRadius: 12, padding: 3, borderWidth: 1, borderColor: colors.borderSubtle }}>
+          <Pressable
+            onPress={() => { setViewMode('list'); setSelectedDate(null); }}
+            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: viewMode === 'list' ? colors.accentNeon : 'transparent' }}
+          >
+            <Ionicons name="list" size={18} color={viewMode === 'list' ? colors.bgBase : colors.textMuted} />
+          </Pressable>
+          <Pressable
+            onPress={() => setViewMode('calendar')}
+            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: viewMode === 'calendar' ? colors.accentNeon : 'transparent' }}
+          >
+            <Ionicons name="calendar" size={18} color={viewMode === 'calendar' ? colors.bgBase : colors.textMuted} />
+          </Pressable>
+        </View>
+      </View>
+
+      {viewMode === 'list' ? (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          <Input
+            value={query}
+            onChangeText={onQueryChange}
+            placeholder="Buscar por nome, cidade, circuito..."
+          />
+
+          {/* Status chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 6, paddingRight: 8 }}>
+              {STATUS_FILTERS.map((f) => {
+                const active = statusFilter === f.key;
+                return (
+                  <Pressable
+                    key={f.key}
+                    onPress={() => onStatusFilter(f.key)}
+                    style={{
+                      paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+                      backgroundColor: active ? colors.accentNeon : colors.bgCard,
+                      borderWidth: 1, borderColor: active ? colors.accentNeon : colors.borderSubtle,
+                    }}
+                  >
+                    <AppText variant="caption" style={{ color: active ? colors.bgBase : colors.textSecondary, fontWeight: '600' }}>{f.label}</AppText>
+                  </Pressable>
+                );
+              })}
+
+              {/* Divider */}
+              <View style={{ width: 1, backgroundColor: colors.borderSubtle, marginHorizontal: 2 }} />
+
+              {/* Circuit chips */}
+              {CIRCUIT_FILTERS.map((f) => {
+                const active = circuitFilter === f.key;
+                return (
+                  <Pressable
+                    key={f.key}
+                    onPress={() => onCircuitFilter(f.key)}
+                    style={{
+                      paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+                      backgroundColor: active ? colors.accentBlue : colors.bgCard,
+                      borderWidth: 1, borderColor: active ? colors.accentBlue : colors.borderSubtle,
+                    }}
+                  >
+                    <AppText variant="caption" style={{ color: active ? '#fff' : colors.textSecondary, fontWeight: '600' }}>{f.label}</AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          {loading ? (
+            <LoadingBlock />
+          ) : items.length === 0 ? (
+            <EmptyState title="Nenhum torneio encontrado." subtitle="Tente ajustar a busca ou os filtros." />
+          ) : (
+            items.map((ed) => (
+              <TournamentCard
+                key={ed.id}
+                edition={ed}
+                onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })}
+              />
+            ))
+          )}
+        </ScrollView>
+      ) : (
+        /* Calendar view */
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          {/* Month nav */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Pressable
+              onPress={() => { setCalMonth(new Date(year, month - 1, 1)); setSelectedDate(null); }}
+              style={{ padding: 8 }}
+            >
+              <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+            </Pressable>
+            <AppText variant="body" style={{ fontWeight: '700', fontSize: 16 }}>{MONTHS_PT[month]} {year}</AppText>
+            <Pressable
+              onPress={() => { setCalMonth(new Date(year, month + 1, 1)); setSelectedDate(null); }}
+              style={{ padding: 8 }}
+            >
+              <Ionicons name="chevron-forward" size={20} color={colors.textPrimary} />
+            </Pressable>
+          </View>
+
+          {/* Weekday headers */}
+          <View style={{ flexDirection: 'row', marginBottom: 4 }}>
+            {WEEKDAYS_PT.map((d, i) => (
+              <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                <AppText variant="caption" style={{ color: colors.textMuted, fontWeight: '700', fontSize: 11 }}>{d}</AppText>
+              </View>
+            ))}
+          </View>
+
+          {loading ? (
+            <LoadingBlock />
+          ) : (
+            <>
+              {/* Day grid */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
+                {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+                  <View key={`empty-${i}`} style={{ width: `${100 / 7}%` }} />
+                ))}
+                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                  const key = dayKey(day);
+                  const count = calendarMap[key]?.length ?? 0;
+                  const hasItems = count > 0;
+                  const isToday = key === TODAY;
+                  const isSelected = key === selectedDate;
+                  return (
+                    <Pressable
+                      key={day}
+                      onPress={() => setSelectedDate(isSelected ? null : key)}
+                      style={{ width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 4 }}
+                    >
+                      <View style={{
+                        width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+                        backgroundColor: isSelected ? colors.accentNeon : isToday ? `${colors.accentNeon}22` : 'transparent',
+                        borderWidth: isToday && !isSelected ? 1 : 0,
+                        borderColor: colors.accentNeon,
+                      }}>
+                        <AppText
+                          variant="caption"
+                          style={{
+                            fontWeight: hasItems ? '700' : '400',
+                            color: isSelected ? colors.bgBase : isToday ? colors.accentNeon : hasItems ? colors.textPrimary : colors.textMuted,
+                          }}
+                        >
+                          {day}
+                        </AppText>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 2, marginTop: 2, height: 6, alignItems: 'center' }}>
+                        {hasItems && !isSelected
+                          ? Array.from({ length: Math.min(count, 3) }).map((_, i) => (
+                              <View key={i} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: isSelected ? 'transparent' : colors.accentNeon }} />
+                            ))
+                          : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Selected day results */}
+              {selectedDate ? (
+                <View style={{ marginTop: 8 }}>
+                  <AppText variant="body" style={{ fontWeight: '700', marginBottom: 8 }}>
+                    {parseInt(selectedDate.slice(8), 10)} de {MONTHS_PT[parseInt(selectedDate.slice(5, 7), 10) - 1]}
+                  </AppText>
+                  {selectedDayItems.length === 0 ? (
+                    <AppText variant="muted" style={{ textAlign: 'center', marginVertical: 16 }}>Nenhum torneio começa neste dia</AppText>
+                  ) : (
+                    selectedDayItems.map((ed) => (
+                      <TournamentCard
+                        key={ed.id}
+                        edition={ed}
+                        onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })}
+                      />
+                    ))
+                  )}
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginTop: 8 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentNeon }} />
+                  <AppText variant="caption" style={{ color: colors.textMuted }}>Toque em um dia para ver os torneios</AppText>
+                </View>
+              )}
+            </>
+          )}
+        </ScrollView>
+      )}
     </Screen>
   );
 }

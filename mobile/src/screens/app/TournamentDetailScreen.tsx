@@ -313,18 +313,28 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
         <View>
           <SectionHeader title="Elegibilidade" subtitle="Baseado no seu perfil principal" />
           {eligibility.categories?.map((item: any) => {
-            const isEligible = item.result?.status === 'eligible';
-            const iconName = isEligible ? 'checkmark-circle' : 'close-circle';
-            const iconColor = isEligible ? colors.accentNeon : '#ef4444';
+            const status: string = item.result?.status ?? 'unknown';
+            const isCompatible = status === 'compatible';
+            const isUnknown = status === 'unknown';
+            const iconName = isCompatible ? 'checkmark-circle' : isUnknown ? 'help-circle' : 'close-circle';
+            const iconColor = isCompatible ? colors.accentNeon : isUnknown ? '#f59e0b' : '#ef4444';
             return (
               <Card key={item.tournament_category_id} style={{ marginBottom: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <Ionicons name={iconName} size={16} color={iconColor} />
                   <AppText variant="body" style={{ fontWeight: '700', flex: 1 }}>{item.source_text}</AppText>
+                  {isUnknown && (
+                    <View style={{ backgroundColor: '#f59e0b22', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                      <AppText variant="caption" style={{ color: '#f59e0b', fontSize: 10, fontWeight: '600' }}>Indeterminado</AppText>
+                    </View>
+                  )}
                 </View>
                 {item.result?.reasons?.map((reason: string) => (
                   <AppText key={reason} variant="muted" style={{ marginLeft: 24 }}>• {translateReason(reason)}</AppText>
                 ))}
+                {isUnknown && !item.result?.reasons?.length ? (
+                  <AppText variant="muted" style={{ marginLeft: 24, color: '#f59e0b' }}>• Regra oficial não encontrada para esta categoria</AppText>
+                ) : null}
               </Card>
             );
           })}
