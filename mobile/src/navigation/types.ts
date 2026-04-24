@@ -24,6 +24,7 @@ export type MainStackParamList = {
   MyRegistrations: undefined;
   RegistrationList: { editionId: number; editionTitle: string };
   Plans: undefined;
-  Checkout: { plan: import('../services/billing').Plan; billingPeriod: 'monthly' | 'yearly' };
+  Checkout: { plan: import('../types/billing').Plan; billingPeriod: 'monthly' | 'yearly' };
   Subscription: undefined;
+  TournamentCompare: { ids: number[] };
 };

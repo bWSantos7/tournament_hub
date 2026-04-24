@@ -8,11 +8,12 @@ app = Celery('tournament_hub')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
-# Periodic tasks
+# Fallback beat schedule (used when DatabaseScheduler is NOT active / for reference).
+# The authoritative schedule lives in the DB — run `setup_periodic_tasks` after each deploy.
 app.conf.beat_schedule = {
     'ingest-all-active-sources-hourly': {
         'task': 'apps.ingestion.tasks.run_all_active_sources',
-        'schedule': crontab(minute=0),  # every hour at minute 0
+        'schedule': crontab(minute=0),
     },
     'dispatch-deadline-alerts-hourly': {
         'task': 'apps.alerts.tasks.dispatch_deadline_alerts',
@@ -27,6 +28,25 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=3, minute=0),
     },
 }
+
+
+@app.on_after_configure.connect
+def _ensure_periodic_tasks(sender, **kwargs):
+    """
+    Auto-register periodic tasks in the DB on worker/beat startup.
+    Runs only when Django ORM is available (i.e. not during early import).
+    """
+    try:
+        from django.db import connection
+        connection.ensure_connection()
+    except Exception:
+        return
+
+    try:
+        from django.core.management import call_command
+        call_command('setup_periodic_tasks', verbosity=0)
+    except Exception:
+        pass
 
 
 @app.task(bind=True)

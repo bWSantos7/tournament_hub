@@ -120,11 +120,17 @@ class Command(BaseCommand):
             action = 'Created' if created else 'Updated'
             self.stdout.write(f'  {action} plan: {plan.slug}')
 
+            desired_feature_ids = []
             for code, limit in features.items():
-                PlanFeature.objects.update_or_create(
+                pf, _ = PlanFeature.objects.update_or_create(
                     plan=plan,
                     feature=feature_map[code],
                     defaults={'limit': limit},
                 )
+                desired_feature_ids.append(pf.pk)
+
+            removed, _ = PlanFeature.objects.filter(plan=plan).exclude(pk__in=desired_feature_ids).delete()
+            if removed:
+                self.stdout.write(f'  Removed {removed} orphaned feature(s) from plan: {plan.slug}')
 
         self.stdout.write(self.style.SUCCESS('Plans seeded successfully.'))

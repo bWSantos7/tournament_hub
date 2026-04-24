@@ -195,6 +195,40 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
         cache.set(cache_key, payload, _COMPATIBLE_CACHE_TTL)
         return Response(payload)
 
+    @action(detail=False, methods=['post'])
+    def check_conflicts(self, request):
+        """RF-029: given a list of edition IDs, return all overlapping date pairs."""
+        ids = request.data.get('ids', [])
+        if not isinstance(ids, list) or len(ids) < 2:
+            return Response({'detail': 'Envie pelo menos 2 IDs em "ids".'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(ids) > 10:
+            return Response({'detail': 'Máximo de 10 IDs por requisição.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        editions = list(
+            TournamentEdition.objects
+            .filter(pk__in=ids)
+            .only('id', 'title', 'start_date', 'end_date')
+        )
+
+        conflicts = []
+        for i in range(len(editions)):
+            for j in range(i + 1, len(editions)):
+                a, b = editions[i], editions[j]
+                a_start = a.start_date
+                a_end = a.end_date or a.start_date
+                b_start = b.start_date
+                b_end = b.end_date or b.start_date
+                if a_start is None or b_start is None:
+                    continue
+                # Overlaps when a starts before b ends and b starts before a ends
+                if a_start <= b_end and b_start <= a_end:
+                    conflicts.append({
+                        'edition_a': {'id': a.id, 'title': a.title, 'start_date': str(a_start), 'end_date': str(a_end)},
+                        'edition_b': {'id': b.id, 'title': b.title, 'start_date': str(b_start), 'end_date': str(b_end)},
+                    })
+
+        return Response({'conflicts': conflicts, 'has_conflicts': bool(conflicts)})
+
     @action(detail=True, methods=['get'])
     def history(self, request, pk=None):
         from .serializers import TournamentChangeEventSerializer

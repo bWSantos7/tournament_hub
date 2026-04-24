@@ -76,8 +76,20 @@ export function CheckoutScreen() {
       }
       navigation.navigate('Subscription');
     } catch (err: any) {
-      const msg = err?.response?.data?.detail ?? 'Não foi possível processar o pagamento.';
-      Alert.alert('Erro', msg);
+      let msg = 'Não foi possível processar o pagamento.';
+      if (!err?.response) {
+        // Network error (no response received)
+        msg = 'Sem conexão com a internet. Verifique sua rede e tente novamente.';
+      } else if (err.response.status >= 500) {
+        msg = 'Erro interno no servidor. Tente novamente em alguns minutos.';
+      } else if (err.response.status === 422 || err.response.status === 400) {
+        msg = err.response.data?.detail ?? 'Dados inválidos. Verifique as informações e tente novamente.';
+      } else if (err.response.status === 402) {
+        msg = 'Pagamento recusado. Verifique os dados do cartão ou escolha outro método.';
+      } else if (err.response.data?.detail) {
+        msg = err.response.data.detail;
+      }
+      Alert.alert('Erro no pagamento', msg);
     } finally {
       setLoading(false);
     }

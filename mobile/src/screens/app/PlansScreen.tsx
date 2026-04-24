@@ -11,7 +11,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../../navigation/types';
-import { fetchPlans, fetchSubscription, Plan, Subscription } from '../../services/billing';
+import { checkout, fetchPlans, fetchSubscription, Plan, Subscription } from '../../services/billing';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
@@ -98,7 +98,22 @@ export function PlansScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  function handleSelect(plan: Plan) {
+  async function handleSelect(plan: Plan) {
+    // Free plan → activate immediately, no checkout needed
+    if (plan.slug === 'free') {
+      setLoading(true);
+      try {
+        await checkout({ plan_slug: 'free', billing_period: billingPeriod, payment_method: 'pix' });
+        Alert.alert('Pronto!', 'Você está no plano gratuito.', [
+          { text: 'OK', onPress: () => navigation.navigate('Subscription') },
+        ]);
+      } catch {
+        Alert.alert('Erro', 'Não foi possível ativar o plano gratuito.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     navigation.navigate('Checkout', { plan, billingPeriod });
   }
 

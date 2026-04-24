@@ -237,9 +237,17 @@ def validate_webhook_token(token: str) -> bool:
     """
     Asaas sends a token in the webhook header (asaas-webhook-token).
     Compare against ASAAS_WEBHOOK_TOKEN env var.
+
+    SECURITY: If ASAAS_WEBHOOK_TOKEN is not configured we REJECT the request.
+    Accepting unauthenticated webhooks would allow payload injection by anyone.
+    Configure the token before enabling Asaas integration.
     """
     expected = getattr(settings, 'ASAAS_WEBHOOK_TOKEN', '')
     if not expected:
-        logger.warning('ASAAS_WEBHOOK_TOKEN not configured — skipping webhook validation')
-        return True  # permissive until token is set
+        logger.error(
+            'ASAAS_WEBHOOK_TOKEN is not configured. '
+            'All webhook requests will be rejected until the token is set. '
+            'Set ASAAS_WEBHOOK_TOKEN in your environment variables.'
+        )
+        return False  # reject — never accept unauthenticated webhooks
     return token == expected

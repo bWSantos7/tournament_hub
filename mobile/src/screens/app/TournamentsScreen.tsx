@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -49,6 +49,8 @@ export function TournamentsScreen(_: Props) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [calMonth, setCalMonth] = useState(() => new Date());
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<number[]>([]);
 
   async function loadList(q = query, status = statusFilter, circuit = circuitFilter) {
     setLoading(true);
@@ -112,6 +114,32 @@ export function TournamentsScreen(_: Props) {
     loadList(query, statusFilter, next);
   }
 
+  function toggleCompareMode() {
+    setCompareMode((v) => !v);
+    setCompareIds([]);
+  }
+
+  function toggleCompareId(id: number) {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 3) {
+        Toast.show({ type: 'info', text1: 'Máximo 3 torneios para comparar' });
+        return prev;
+      }
+      return [...prev, id];
+    });
+  }
+
+  function startCompare() {
+    if (compareIds.length < 2) {
+      Toast.show({ type: 'info', text1: 'Selecione pelo menos 2 torneios' });
+      return;
+    }
+    navigation.navigate('TournamentCompare', { ids: compareIds });
+    setCompareMode(false);
+    setCompareIds([]);
+  }
+
   const year = calMonth.getFullYear();
   const month = calMonth.getMonth();
   const firstDayOfMonth = new Date(year, month, 1).getDay();
@@ -131,23 +159,38 @@ export function TournamentsScreen(_: Props) {
           <AppText variant="title">Torneios</AppText>
           <AppText variant="caption" style={{ color: colors.textMuted }}>Torneios infantojuvenis agregados</AppText>
         </View>
-        <View style={{ flexDirection: 'row', backgroundColor: colors.bgCard, borderRadius: 12, padding: 3, borderWidth: 1, borderColor: colors.borderSubtle }}>
-          <Pressable
-            onPress={() => { setViewMode('list'); setSelectedDate(null); }}
-            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: viewMode === 'list' ? colors.accentNeon : 'transparent' }}
-          >
-            <Ionicons name="list" size={18} color={viewMode === 'list' ? colors.bgBase : colors.textMuted} />
-          </Pressable>
-          <Pressable
-            onPress={() => setViewMode('calendar')}
-            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: viewMode === 'calendar' ? colors.accentNeon : 'transparent' }}
-          >
-            <Ionicons name="calendar" size={18} color={viewMode === 'calendar' ? colors.bgBase : colors.textMuted} />
-          </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          {viewMode === 'list' && (
+            <Pressable
+              onPress={toggleCompareMode}
+              style={{
+                paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9,
+                backgroundColor: compareMode ? colors.accentBlue : colors.bgCard,
+                borderWidth: 1, borderColor: compareMode ? colors.accentBlue : colors.borderSubtle,
+              }}
+            >
+              <Ionicons name="git-compare-outline" size={18} color={compareMode ? '#fff' : colors.textMuted} />
+            </Pressable>
+          )}
+          <View style={{ flexDirection: 'row', backgroundColor: colors.bgCard, borderRadius: 12, padding: 3, borderWidth: 1, borderColor: colors.borderSubtle }}>
+            <Pressable
+              onPress={() => { setViewMode('list'); setSelectedDate(null); setCompareMode(false); setCompareIds([]); }}
+              style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: viewMode === 'list' ? colors.accentNeon : 'transparent' }}
+            >
+              <Ionicons name="list" size={18} color={viewMode === 'list' ? colors.bgBase : colors.textMuted} />
+            </Pressable>
+            <Pressable
+              onPress={() => setViewMode('calendar')}
+              style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: viewMode === 'calendar' ? colors.accentNeon : 'transparent' }}
+            >
+              <Ionicons name="calendar" size={18} color={viewMode === 'calendar' ? colors.bgBase : colors.textMuted} />
+            </Pressable>
+          </View>
         </View>
       </View>
 
       {viewMode === 'list' ? (
+        <>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
           <Input
             value={query}
@@ -203,15 +246,45 @@ export function TournamentsScreen(_: Props) {
           ) : items.length === 0 ? (
             <EmptyState title="Nenhum torneio encontrado." subtitle="Tente ajustar a busca ou os filtros." />
           ) : (
-            items.map((ed) => (
-              <TournamentCard
-                key={ed.id}
-                edition={ed}
-                onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })}
-              />
-            ))
+            items.map((ed) => {
+              const selected = compareIds.includes(ed.id);
+              return (
+                <View key={ed.id} style={{ position: 'relative' }}>
+                  {compareMode && (
+                    <Pressable
+                      onPress={() => toggleCompareId(ed.id)}
+                      style={[
+                        styles.compareCheckbox,
+                        { borderColor: selected ? colors.accentBlue : colors.borderSubtle, backgroundColor: selected ? colors.accentBlue : colors.bgCard },
+                      ]}
+                    >
+                      {selected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                    </Pressable>
+                  )}
+                  <TournamentCard
+                    edition={ed}
+                    onPress={() => compareMode ? toggleCompareId(ed.id) : navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })}
+                  />
+                </View>
+              );
+            })
           )}
         </ScrollView>
+
+        {/* Floating compare button */}
+        {compareMode && compareIds.length >= 2 && (
+          <TouchableOpacity
+            style={[styles.compareBtn, { backgroundColor: colors.accentBlue }]}
+            onPress={startCompare}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="git-compare-outline" size={18} color="#fff" />
+            <AppText variant="caption" style={{ color: '#fff', fontWeight: '700', marginLeft: 6 }}>
+              Comparar ({compareIds.length})
+            </AppText>
+          </TouchableOpacity>
+        )}
+        </>
       ) : (
         /* Calendar view */
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -307,6 +380,7 @@ export function TournamentsScreen(_: Props) {
                       />
                     ))
                   )}
+
                 </View>
               ) : (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginTop: 8 }}>
@@ -321,3 +395,18 @@ export function TournamentsScreen(_: Props) {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  compareCheckbox: {
+    position: 'absolute', top: 10, right: 10, zIndex: 10,
+    width: 24, height: 24, borderRadius: 12, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  compareBtn: {
+    position: 'absolute', bottom: 20, alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 24, paddingVertical: 12,
+    borderRadius: 30, elevation: 4, shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
+  },
+});

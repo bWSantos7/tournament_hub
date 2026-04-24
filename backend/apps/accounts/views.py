@@ -124,17 +124,45 @@ class MeView(generics.RetrieveUpdateAPIView):
         return Response(UserSerializer(self.get_object(), context={'request': request}).data)
 
 
+_ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP', 'GIF'}
+_MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def upload_avatar(request):
-    """Upload or replace the user's avatar image."""
+    """
+    Upload or replace the user's avatar image.
+
+    Security: validates magic bytes via Pillow (not just Content-Type header),
+    rejects SVG and any non-raster format to prevent script injection.
+    """
     file = request.FILES.get('avatar')
     if not file:
         return Response({'detail': 'Nenhuma imagem enviada.'}, status=status.HTTP_400_BAD_REQUEST)
-    if file.size > 5 * 1024 * 1024:
+
+    if file.size > _MAX_AVATAR_BYTES:
         return Response({'detail': 'Imagem deve ter no máximo 5MB.'}, status=status.HTTP_400_BAD_REQUEST)
-    if not file.content_type.startswith('image/'):
-        return Response({'detail': 'Arquivo deve ser uma imagem.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Reject SVG by content_type before reading bytes (fast path)
+    if file.content_type in ('image/svg+xml', 'image/svg', 'text/xml', 'text/html'):
+        return Response({'detail': 'Formato SVG não é permitido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate magic bytes with Pillow — rejects disguised executables and SVGs
+    try:
+        from PIL import Image
+        img = Image.open(file)
+        img.verify()  # raises if not a valid image
+        if img.format not in _ALLOWED_IMAGE_FORMATS:
+            return Response(
+                {'detail': f'Formato {img.format} não suportado. Use JPEG, PNG, WEBP ou GIF.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Reset file pointer after verify() consumed the stream
+        file.seek(0)
+    except Exception:
+        return Response({'detail': 'Arquivo inválido ou corrompido.'}, status=status.HTTP_400_BAD_REQUEST)
+
     user = request.user
     if user.avatar:
         user.avatar.delete(save=False)

@@ -162,10 +162,19 @@ def _create_alert(user, edition, kind, channel, title, body='', payload=None, de
 def dispatch_deadline_alerts(self):
     """
     For every watchlist item whose user wants deadline alerts,
-    send a notification when entry_close_at is within the configured D-N windows.
+    send a notification when entry_close_at falls within D-N windows.
+
+    Uses a date-based approach (not hour window) so the task is resilient to
+    missed runs: dedup keys prevent duplicate alerts even if task fires multiple
+    times in the same day.
     """
+    import pytz
+    brasilia = pytz.timezone('America/Sao_Paulo')
+
     now = timezone.now()
+    today_brasilia = now.astimezone(brasilia).date()
     created = 0
+
     qs = (
         WatchlistItem.objects
         .select_related('user', 'edition', 'edition__tournament__organization')
@@ -174,24 +183,30 @@ def dispatch_deadline_alerts(self):
     )
     for item in qs:
         prefs = UserAlertPreference.get_or_create_defaults(item.user)
-        if not prefs.in_app_enabled and not prefs.email_enabled:
+        if not prefs.in_app_enabled and not prefs.email_enabled and not prefs.push_enabled:
             continue
         days_list = prefs.deadline_days or [7, 2, 0]
+
+        close_local = item.edition.entry_close_at.astimezone(brasilia)
+        close_date = close_local.date()
+        days_until = (close_date - today_brasilia).days
+
         for d in days_list:
-            window_start = now + timedelta(days=d)
-            window_end = window_start + timedelta(hours=1)
-            if not (window_start <= item.edition.entry_close_at <= window_end):
+            if days_until != d:
                 continue
-            dedup = f'deadline:{item.edition_id}:{d}'
+
+            dedup = f'deadline:{item.edition_id}:{d}:{today_brasilia}'
             title = (
-                f'{item.edition.title} — inscrições hoje!' if d == 0
-                else f'{item.edition.title} — faltam {d} dias para o fechamento'
+                f'{item.edition.title} — inscrições encerram hoje!'
+                if d == 0
+                else f'{item.edition.title} — faltam {d} dia{"s" if d != 1 else ""} para o fechamento'
             )
             body = (
                 f'O prazo de inscrição encerra em '
-                f'{item.edition.entry_close_at.strftime("%d/%m/%Y %H:%M")} '
+                f'{close_local.strftime("%d/%m/%Y %H:%M")} '
                 f'(horário de Brasília). Link oficial: {item.edition.official_source_url or "-"}'
             )
+
             channel = Alert.CHANNEL_EMAIL if prefs.email_enabled else Alert.CHANNEL_IN_APP
             a = _create_alert(
                 user=item.user, edition=item.edition,
@@ -202,6 +217,8 @@ def dispatch_deadline_alerts(self):
             )
             if a:
                 created += 1
+
+            # Also send in-app when email is primary
             if channel == Alert.CHANNEL_EMAIL and prefs.in_app_enabled:
                 _create_alert(
                     user=item.user, edition=item.edition,
@@ -210,6 +227,7 @@ def dispatch_deadline_alerts(self):
                     payload={'days_before': d},
                     dedup_key=dedup + ':app',
                 )
+
             if prefs.push_enabled:
                 _create_alert(
                     user=item.user, edition=item.edition,
@@ -218,6 +236,7 @@ def dispatch_deadline_alerts(self):
                     payload={'days_before': d},
                     dedup_key=dedup + ':push',
                 )
+
     logger.info('Dispatched %d deadline alerts', created)
     return created
 

@@ -6,7 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { MainStackParamList } from '../../navigation/types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { AppText, Button, Card, EmptyState, Input, LoadingBlock, Screen, SectionHeader, SelectField } from '../../components/ui';
-import { TournamentEditionDetail, TournamentRegistration } from '../../types';
+import {
+  EditionEligibility,
+  TournamentChangeEvent,
+  TournamentEditionDetail,
+  TournamentRegistration,
+} from '../../types';
 import { getEdition, evaluateEdition, editionHistory } from '../../services/tournaments';
 import { listProfiles, listWatchlist, toggleWatchlist } from '../../services/data';
 import { myRegistrations, registerForEdition, withdrawRegistration } from '../../services/registrations';
@@ -42,8 +47,8 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<TournamentEditionDetail | null>(null);
-  const [eligibility, setEligibility] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [eligibility, setEligibility] = useState<EditionEligibility | null>(null);
+  const [history, setHistory] = useState<TournamentChangeEvent[]>([]);
   const [watching, setWatching] = useState(false);
   const [togglingWatch, setTogglingWatch] = useState(false);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -58,21 +63,23 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
       setDetail(d);
       const [profiles, hist, regs, watchlist] = await Promise.all([
         listProfiles().catch(() => []),
-        editionHistory(id).catch(() => []),
-        myRegistrations().catch(() => []),
+        editionHistory(id).catch(() => [] as TournamentChangeEvent[]),
+        myRegistrations().catch(() => [] as TournamentRegistration[]),
         listWatchlist().catch(() => []),
       ]);
-      setHistory(hist as any[]);
-      const existing = (regs as TournamentRegistration[]).find(
-        (r) => r.edition_id === id && !r.is_withdrawn
-      );
+      setHistory((hist ?? []) as TournamentChangeEvent[]);
+      const regList = (regs ?? []) as TournamentRegistration[];
+      const existing = regList.find((r) => r.edition_id === id && !r.is_withdrawn);
       setMyReg(existing ?? null);
-      const wl = Array.isArray(watchlist) ? watchlist : (watchlist as any).results ?? [];
-      setWatching(wl.some((w: any) => (w.edition === id || w.edition_id === id)));
-      const primary = pickBestProfile(profiles as any[]);
+      const wlArray = Array.isArray(watchlist) ? watchlist : ((watchlist as { results?: unknown[] }).results ?? []);
+      setWatching(wlArray.some((w) => {
+        const item = w as { edition?: number; edition_id?: number };
+        return item.edition === id || item.edition_id === id;
+      }));
+      const primary = pickBestProfile(profiles as Parameters<typeof pickBestProfile>[0]);
       if (primary) {
         const elig = await evaluateEdition(id, primary.id).catch(() => null);
-        setEligibility(elig);
+        setEligibility(elig as EditionEligibility | null);
       }
     } catch (err) {
       setError(extractApiError(err));
@@ -100,7 +107,7 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
     setTogglingWatch(true);
     try {
       const profiles = await listProfiles().catch(() => []);
-      const primary = pickBestProfile(profiles as any[]);
+      const primary = pickBestProfile(profiles as Parameters<typeof pickBestProfile>[0]);
       const result = await toggleWatchlist(id, primary?.id);
       setWatching(result.watching);
       Toast.show({ type: 'success', text1: result.watching ? 'Adicionado à agenda' : 'Removido da agenda' });

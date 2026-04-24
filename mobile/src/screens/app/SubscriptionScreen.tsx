@@ -164,6 +164,31 @@ export function SubscriptionScreen() {
         )}
       </View>
 
+      {/* Pending payment instructions (M9) */}
+      {sub.status === 'pending' && sub.plan_slug !== 'free' && (
+        <View style={styles.pendingCard}>
+          <Text style={styles.pendingTitle}>⏳ Pagamento pendente</Text>
+          <Text style={styles.pendingText}>
+            Sua assinatura foi criada e está aguardando confirmação do pagamento.
+            Verifique seu e-mail para instruções de pagamento (Pix, boleto ou cartão).
+          </Text>
+          <Text style={styles.pendingHint}>
+            Após a confirmação do pagamento, sua assinatura será ativada automaticamente.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => navigation.navigate('Checkout', {
+              plan: { id: sub.plan, name: sub.plan_name, slug: sub.plan_slug as any,
+                price_monthly: sub.price_monthly, price_yearly: sub.price_yearly,
+                description: '', highlight_label: '', display_order: 0, is_active: true, features: [] },
+              billingPeriod: sub.billing_period,
+            })}
+          >
+            <Text style={styles.retryBtnText}>Reenviar pagamento</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Actions */}
       <TouchableOpacity
         style={styles.upgradeBtn}
@@ -247,6 +272,13 @@ const styles = StyleSheet.create({
 
   warningBanner: { backgroundColor: '#FEF3C7', borderRadius: 8, padding: 10, marginTop: 10 },
   warningText:   { color: '#92400E', fontSize: 12 },
+
+  pendingCard:   { backgroundColor: '#FFFBEB', borderRadius: 12, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#F59E0B' },
+  pendingTitle:  { fontSize: 16, fontWeight: '700', color: '#92400E', marginBottom: 8 },
+  pendingText:   { fontSize: 13, color: '#78350F', lineHeight: 19, marginBottom: 8 },
+  pendingHint:   { fontSize: 12, color: '#92400E', fontStyle: 'italic', marginBottom: 12 },
+  retryBtn:      { backgroundColor: '#F59E0B', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  retryBtnText:  { color: '#FFF', fontWeight: '700', fontSize: 14 },
 
   upgradeBtn:     { backgroundColor: '#6366F1', borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginBottom: 10 },
   upgradeBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },

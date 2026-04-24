@@ -3,6 +3,9 @@ from apps.core.models import TimestampedModel
 from apps.sources.models import Organization
 
 
+
+
+
 class RuleSet(TimestampedModel):
     """A named set of rules e.g. 'FPT Abertos', 'CBT Infantojuvenil'."""
     organization = models.ForeignKey(
@@ -86,3 +89,63 @@ class RuleClause(TimestampedModel):
 
     def __str__(self):
         return f'{self.rule_version} :: {self.clause_type} :: {self.category_code}'
+
+
+class TournamentRuleBinding(TimestampedModel):
+    """
+    Binds a specific TournamentEdition to a RuleSet (and optionally a pinned RuleVersion).
+
+    When a tournament has a binding, the eligibility engine uses that specific ruleset
+    instead of the global active ruleset for the organization.
+    This allows CBT and FPT tournaments to have different rule versions simultaneously.
+    """
+    edition = models.ForeignKey(
+        'tournaments.TournamentEdition',
+        on_delete=models.CASCADE,
+        related_name='rule_bindings',
+    )
+    ruleset = models.ForeignKey(
+        RuleSet,
+        on_delete=models.PROTECT,
+        related_name='tournament_bindings',
+    )
+    # If set, pins a specific version. If null, the engine resolves the active version at runtime.
+    pinned_version = models.ForeignKey(
+        RuleVersion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pinned_bindings',
+        help_text='Leave blank to always use the active version of the ruleset',
+    )
+    binding_reason = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='e.g. "2026 season rules", "CBT infantojuvenil reg 2026"',
+    )
+    is_primary = models.BooleanField(
+        default=True,
+        help_text='Primary binding used for eligibility evaluation',
+    )
+
+    class Meta:
+        ordering = ['-is_primary', '-created_at']
+        indexes = [
+            models.Index(fields=['edition', 'is_primary']),
+        ]
+        unique_together = ('edition', 'ruleset')
+
+    def __str__(self):
+        version = f' @ {self.pinned_version}' if self.pinned_version else ' (active)'
+        return f'{self.edition} → {self.ruleset}{version}'
+
+    def resolve_version(self) -> 'RuleVersion | None':
+        """Return the pinned version, or the current active version of the ruleset."""
+        if self.pinned_version:
+            return self.pinned_version
+        return (
+            self.ruleset.versions
+            .filter(status=RuleVersion.STATUS_ACTIVE)
+            .order_by('-effective_from')
+            .first()
+        )

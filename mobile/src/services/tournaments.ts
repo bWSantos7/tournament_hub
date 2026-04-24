@@ -73,6 +73,16 @@ export async function calendar(filters: TournamentFilters = {}) {
   return res.data;
 }
 
+export interface ConflictPair {
+  edition_a: { id: number; title: string; start_date: string; end_date: string };
+  edition_b: { id: number; title: string; start_date: string; end_date: string };
+}
+
+export async function checkConflicts(ids: number[]): Promise<{ conflicts: ConflictPair[]; has_conflicts: boolean }> {
+  const res = await api.post('/api/tournaments/editions/check_conflicts/', { ids });
+  return res.data;
+}
+
 export async function evaluateEdition(editionId: number, profileId?: number) {
   const url = profileId
     ? `/api/eligibility/evaluate/${editionId}/?profile_id=${profileId}`

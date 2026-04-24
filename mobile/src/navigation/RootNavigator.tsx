@@ -15,6 +15,7 @@ import { RegistrationListScreen } from '../screens/app/RegistrationListScreen';
 import { PlansScreen } from '../screens/app/PlansScreen';
 import { CheckoutScreen } from '../screens/app/CheckoutScreen';
 import { SubscriptionScreen } from '../screens/app/SubscriptionScreen';
+import { TournamentCompareScreen } from '../screens/app/TournamentCompareScreen';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
@@ -41,9 +42,26 @@ export function RootNavigator() {
       <MainStack.Screen name="AdminPanel" component={AdminPanelScreen} />
       <MainStack.Screen name="MyRegistrations" component={MyRegistrationsScreen} />
       <MainStack.Screen name="RegistrationList" component={RegistrationListScreen} />
-      <MainStack.Screen name="Plans" component={PlansScreen} options={{ title: 'Planos' }} />
-      <MainStack.Screen name="Checkout" component={CheckoutScreen} options={{ title: 'Finalizar assinatura' }} />
-      <MainStack.Screen name="Subscription" component={SubscriptionScreen} options={{ title: 'Minha assinatura' }} />
+      <MainStack.Screen
+        name="Plans"
+        component={PlansScreen}
+        options={{ headerShown: true, title: 'Escolha seu plano', headerBackTitle: 'Voltar' }}
+      />
+      <MainStack.Screen
+        name="Checkout"
+        component={CheckoutScreen}
+        options={{ headerShown: true, title: 'Finalizar assinatura', headerBackTitle: 'Voltar' }}
+      />
+      <MainStack.Screen
+        name="Subscription"
+        component={SubscriptionScreen}
+        options={{ headerShown: true, title: 'Minha assinatura', headerBackTitle: 'Voltar' }}
+      />
+      <MainStack.Screen
+        name="TournamentCompare"
+        component={TournamentCompareScreen}
+        options={{ headerShown: true, title: 'Comparar torneios', headerBackTitle: 'Voltar' }}
+      />
     </MainStack.Navigator>
   );
 }
