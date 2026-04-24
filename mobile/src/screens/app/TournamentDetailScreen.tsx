@@ -236,6 +236,11 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
             />
           ) : null}
         </View>
+        <Button
+          title="Ver lista de inscritos"
+          variant="secondary"
+          onPress={() => navigation.navigate('RegistrationList', { editionId: id, editionTitle: detail.title })}
+        />
       </Card>
 
       {/* My Registration status */}

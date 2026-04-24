@@ -31,6 +31,29 @@ MATERIAL_FIELDS = {
     'status', 'surface', 'base_price_brl', 'title',
 }
 
+_YOUTH_KEYWORDS = {
+    'infantojuvenil', 'infanto', 'juvenil', 'junior', 'júnior',
+    'sub-', 'kids', 'mirim', 'petiz', 'escolinha', 'infantil',
+}
+
+
+def _classify_is_youth(circuit: str, title: str, categories: list) -> bool:
+    """Return True if the tournament appears to be for players up to 18 years old."""
+    combined = (circuit + ' ' + title).lower()
+    if any(kw in combined for kw in _YOUTH_KEYWORDS):
+        return True
+    for cat in categories:
+        cat_text = (cat.get('source_text') or '').lower()
+        if any(kw in cat_text for kw in _YOUTH_KEYWORDS):
+            return True
+        # Category descriptions with specific age ≤ 18 (e.g. "12 anos", "sub-16")
+        import re
+        if re.search(r'\b(8|9|10|11|12|13|14|15|16|17|18)\s*anos?\b', cat_text):
+            return True
+        if re.search(r'\bsub[- ](8|9|10|11|12|13|14|15|16|17|18)\b', cat_text):
+            return True
+    return False
+
 
 class TournamentPersister:
     def __init__(self, data_source: DataSource, run: IngestionRun):
@@ -82,6 +105,12 @@ class TournamentPersister:
         created = False
         changes: dict = {}
 
+        is_youth = _classify_is_youth(
+            data.get('circuit', ''),
+            data.get('title', ''),
+            data.get('categories') or [],
+        )
+
         if not ed:
             ed = TournamentEdition.objects.create(
                 tournament=tournament,
@@ -103,6 +132,7 @@ class TournamentPersister:
                 raw_content_hash=content_hash,
                 raw_payload=data,
                 data_confidence=TournamentEdition.CONFIDENCE_MED,
+                is_youth=is_youth,
             )
             created = True
             TournamentChangeEvent.objects.create(
@@ -159,6 +189,8 @@ class TournamentPersister:
                 ed.fetched_at = timezone.now()
                 ed.raw_content_hash = content_hash
                 ed.raw_payload = data
+                if ed.is_youth is None:
+                    ed.is_youth = is_youth
                 ed.save()
 
                 if changes:

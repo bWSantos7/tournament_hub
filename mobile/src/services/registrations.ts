@@ -1,5 +1,5 @@
 import { api } from './api';
-import { TournamentRegistration } from '../types';
+import { FederationRegistrationList, TournamentRegistration } from '../types';
 
 export async function myRegistrations(): Promise<TournamentRegistration[]> {
   const { data } = await api.get('/api/registrations/my/');
@@ -48,4 +48,25 @@ export async function bulkPayment(payload: {
 
 export async function updateRanking(id: number, ranking_position: number | null): Promise<void> {
   await api.patch(`/api/registrations/${id}/update-ranking/`, { ranking_position });
+}
+
+export async function federationRegistrations(editionId: number): Promise<FederationRegistrationList> {
+  const { data } = await api.get(`/api/registrations/edition/${editionId}/public/`);
+  return data;
+}
+
+export async function federationBulkImport(payload: {
+  edition_id: number;
+  source: string;
+  entries: Array<{
+    category_text: string;
+    player_name: string;
+    player_external_id?: string;
+    ranking_position?: number | null;
+    payment_status?: 'paid' | 'pending' | 'unknown';
+    notes?: string;
+  }>;
+}): Promise<{ created: number; updated: number; errors: string[]; detail: string }> {
+  const { data } = await api.post('/api/registrations/federation/bulk-import/', payload);
+  return data;
 }

@@ -40,12 +40,18 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ('-start_date',)  # most recent tournament date first by default
 
     def get_queryset(self):
-        return (
+        qs = (
             TournamentEdition.objects
             .select_related('tournament', 'tournament__organization', 'venue', 'data_source')
             .prefetch_related('categories__normalized_category', 'links')
             .annotate(categories_count=Count('categories'))
         )
+        # Default: only show youth/junior tournaments (is_youth=True).
+        # Pass ?youth_only=false to include all (admin use).
+        youth_param = self.request.query_params.get('youth_only', 'true').lower()
+        if youth_param != 'false':
+            qs = qs.filter(Q(is_youth=True))
+        return qs
 
     def get_serializer_class(self):
         if self.action == 'retrieve':

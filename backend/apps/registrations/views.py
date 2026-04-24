@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from django.db.models import F, Window
 from django.db.models.functions import RowNumber
 from django.utils import timezone
@@ -8,10 +10,12 @@ from rest_framework.response import Response
 
 from apps.players.models import PlayerProfile
 from apps.tournaments.models import TournamentEdition, TournamentCategory
-from .models import TournamentRegistration
+from .models import FederationEntry, TournamentRegistration
 from .serializers import (
     AdminRegistrationSerializer,
     BulkPaymentSerializer,
+    FederationEntrySerializer,
+    FederationEntryWriteSerializer,
     MyRegistrationSerializer,
     RegistrationCreateSerializer,
 )
@@ -209,3 +213,198 @@ class RegistrationViewSet(viewsets.GenericViewSet):
 
         qs.update(**update_kwargs)
         return Response({'detail': f'{count} inscrições atualizadas para "{pay_status}".'})
+
+    # ── Federation registration list (public) ──────────────────────────────
+
+    @action(detail=False, methods=['get'], url_path=r'edition/(?P<edition_id>\d+)/public')
+    def public_list(self, request, edition_id=None):
+        """
+        GET /api/registrations/edition/{edition_id}/public/
+        Lista pública de inscrições publicadas pela federação, agrupadas por categoria.
+        Qualquer usuário autenticado pode visualizar.
+        """
+        try:
+            edition = TournamentEdition.objects.get(pk=edition_id)
+        except TournamentEdition.DoesNotExist:
+            return Response({'detail': 'Torneio não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Build max_participants lookup per category_text from TournamentCategory
+        cat_max = {
+            tc.source_category_text: tc.max_participants
+            for tc in edition.categories.all()
+        }
+
+        entries = FederationEntry.objects.filter(edition=edition).order_by(
+            'category_text',
+            F('ranking_position').asc(nulls_last=True),
+            'created_at',
+        )
+
+        # Annotate slot_position per (edition, category_text) using Window
+        entries = entries.annotate(
+            slot_position=Window(
+                expression=RowNumber(),
+                partition_by=[F('edition_id'), F('category_text')],
+                order_by=[
+                    F('ranking_position').asc(nulls_last=True),
+                    F('created_at').asc(),
+                ],
+            )
+        )
+
+        # Group by category
+        grouped = defaultdict(list)
+        for entry in entries:
+            entry._max_participants = cat_max.get(entry.category_text)
+            grouped[entry.category_text].append(entry)
+
+        result = []
+        for cat_text, cat_entries in grouped.items():
+            max_p = cat_max.get(cat_text)
+            paid = sum(1 for e in cat_entries if e.payment_status == FederationEntry.PAYMENT_PAID)
+            in_draw = sum(1 for e in cat_entries
+                         if (e.slot_position or 0) <= (max_p or float('inf')) and e.payment_status == FederationEntry.PAYMENT_PAID)
+            result.append({
+                'category_text': cat_text,
+                'max_participants': max_p,
+                'summary': {
+                    'total': len(cat_entries),
+                    'paid': paid,
+                    'pending': len(cat_entries) - paid,
+                    'in_draw': in_draw,
+                    'waiting_list': paid - in_draw,
+                },
+                'entries': FederationEntrySerializer(cat_entries, many=True).data,
+            })
+
+        return Response({
+            'edition_id': edition.id,
+            'edition_title': edition.title,
+            'categories': result,
+        })
+
+
+class FederationEntryViewSet(viewsets.GenericViewSet):
+    """ViewSet para gerenciar inscrições publicadas pela federação."""
+    permission_classes = [IsAuthenticated]
+
+    def _require_staff(self, request):
+        if not request.user.is_staff:
+            return Response({'detail': 'Acesso negado.'}, status=status.HTTP_403_FORBIDDEN)
+
+    def create(self, request):
+        """POST /api/federation-entries/ — Admin: adicionar inscrição manualmente."""
+        err = self._require_staff(request)
+        if err:
+            return err
+        serializer = FederationEntryWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        entry = serializer.save()
+        return Response(FederationEntryWriteSerializer(entry).data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, pk=None):
+        """PATCH /api/federation-entries/{id}/ — Admin: atualizar inscrição."""
+        err = self._require_staff(request)
+        if err:
+            return err
+        try:
+            entry = FederationEntry.objects.get(pk=pk)
+        except FederationEntry.DoesNotExist:
+            return Response({'detail': 'Não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = FederationEntryWriteSerializer(entry, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def destroy(self, request, pk=None):
+        """DELETE /api/federation-entries/{id}/ — Admin: remover inscrição."""
+        err = self._require_staff(request)
+        if err:
+            return err
+        try:
+            FederationEntry.objects.get(pk=pk).delete()
+        except FederationEntry.DoesNotExist:
+            return Response({'detail': 'Não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        """
+        POST /api/federation-entries/bulk-import/
+        Admin: importar lista de inscrições em lote.
+
+        Payload: { "edition_id": int, "source": str, "entries": [...] }
+        Cada entry: { "category_text", "player_name", "player_external_id"?,
+                      "ranking_position"?, "payment_status"?, "notes"? }
+        """
+        err = self._require_staff(request)
+        if err:
+            return err
+
+        edition_id = request.data.get('edition_id')
+        source = request.data.get('source', FederationEntry.SOURCE_MANUAL)
+        entries_data = request.data.get('entries', [])
+
+        if not edition_id:
+            return Response({'detail': 'edition_id obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not entries_data:
+            return Response({'detail': 'entries não pode ser vazio.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            edition = TournamentEdition.objects.get(pk=edition_id)
+        except TournamentEdition.DoesNotExist:
+            return Response({'detail': 'Edição não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        created_count = 0
+        updated_count = 0
+        errors = []
+
+        for i, entry_data in enumerate(entries_data):
+            try:
+                player_name = (entry_data.get('player_name') or '').strip()
+                category_text = (entry_data.get('category_text') or '').strip()
+                external_id = (entry_data.get('player_external_id') or '').strip()
+
+                if not player_name or not category_text:
+                    errors.append(f'Linha {i + 1}: player_name e category_text são obrigatórios.')
+                    continue
+
+                obj, was_created = FederationEntry.objects.update_or_create(
+                    edition=edition,
+                    category_text=category_text,
+                    player_external_id=external_id,
+                    source=source,
+                    defaults={
+                        'player_name': player_name,
+                        'ranking_position': entry_data.get('ranking_position'),
+                        'payment_status': entry_data.get('payment_status', FederationEntry.PAYMENT_UNKNOWN),
+                        'notes': entry_data.get('notes', ''),
+                        'raw_data': entry_data,
+                    },
+                )
+                if was_created:
+                    created_count += 1
+                else:
+                    updated_count += 1
+            except Exception as exc:
+                errors.append(f'Linha {i + 1}: {exc}')
+
+        return Response({
+            'created': created_count,
+            'updated': updated_count,
+            'errors': errors,
+            'detail': f'{created_count} criadas, {updated_count} atualizadas, {len(errors)} erros.',
+        })
+
+    @action(detail=False, methods=['delete'], url_path=r'clear/(?P<edition_id>\d+)')
+    def clear_edition(self, request, edition_id=None):
+        """DELETE /api/federation-entries/clear/{edition_id}/ — Admin: limpar todas as entradas de uma edição."""
+        err = self._require_staff(request)
+        if err:
+            return err
+        source = request.query_params.get('source')
+        qs = FederationEntry.objects.filter(edition_id=edition_id)
+        if source:
+            qs = qs.filter(source=source)
+        count, _ = qs.delete()
+        return Response({'deleted': count})

@@ -290,3 +290,39 @@ export interface Paginated<T> {
   results: T[];
 }
 
+export interface FederationEntry {
+  id: number;
+  category_text: string;
+  player_name: string;
+  player_external_id: string;
+  ranking_position: number | null;
+  payment_status: 'paid' | 'pending' | 'unknown';
+  payment_status_label: string;
+  source: string;
+  notes: string;
+  synced_at: string;
+  slot_position: number | null;
+  in_draw: boolean | null;
+  status: 'confirmed' | 'waiting_list' | 'pending_payment';
+  status_label: string;
+}
+
+export interface FederationCategoryGroup {
+  category_text: string;
+  max_participants: number | null;
+  summary: {
+    total: number;
+    paid: number;
+    pending: number;
+    in_draw: number;
+    waiting_list: number;
+  };
+  entries: FederationEntry[];
+}
+
+export interface FederationRegistrationList {
+  edition_id: number;
+  edition_title: string;
+  categories: FederationCategoryGroup[];
+}
+

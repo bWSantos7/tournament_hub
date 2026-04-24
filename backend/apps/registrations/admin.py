@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import TournamentRegistration
+from .models import FederationEntry, TournamentRegistration
 
 
 @admin.register(TournamentRegistration)
@@ -27,3 +27,28 @@ class TournamentRegistrationAdmin(admin.ModelAdmin):
             reg.reset_payment()
         self.message_user(request, f'{queryset.count()} inscrições resetadas para pendente.')
     reset_payment.short_description = 'Resetar pagamento para pendente'
+
+
+@admin.register(FederationEntry)
+class FederationEntryAdmin(admin.ModelAdmin):
+    list_display = (
+        'player_name', 'edition', 'category_text', 'ranking_position',
+        'payment_status', 'source', 'synced_at',
+    )
+    list_filter = ('payment_status', 'source', 'edition__season_year')
+    search_fields = ('player_name', 'player_external_id', 'edition__title', 'category_text')
+    raw_id_fields = ('edition',)
+    ordering = ('edition', 'category_text', 'ranking_position', 'player_name')
+    readonly_fields = ('synced_at', 'created_at', 'updated_at')
+
+    actions = ['mark_paid', 'mark_pending']
+
+    def mark_paid(self, request, queryset):
+        queryset.update(payment_status=FederationEntry.PAYMENT_PAID)
+        self.message_user(request, f'{queryset.count()} entradas marcadas como pagas.')
+    mark_paid.short_description = 'Marcar como Pago'
+
+    def mark_pending(self, request, queryset):
+        queryset.update(payment_status=FederationEntry.PAYMENT_PENDING)
+        self.message_user(request, f'{queryset.count()} entradas marcadas como pendentes.')
+    mark_pending.short_description = 'Marcar como Pendente'

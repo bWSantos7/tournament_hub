@@ -141,6 +141,12 @@ class TournamentEdition(TimestampedModel):
         max_length=10, choices=CONFIDENCE_CHOICES, default=CONFIDENCE_MED
     )
 
+    # Youth classification
+    is_youth = models.BooleanField(
+        null=True, blank=True, db_index=True,
+        help_text='True = torneio infantojuvenil (categorias até 18 anos). Null = não classificado.',
+    )
+
     class Meta:
         ordering = ['-start_date', '-entry_close_at']
         indexes = [

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import TournamentRegistration
+from .models import FederationEntry, TournamentRegistration
 
 
 PAYMENT_STATUS_LABELS = {
@@ -183,3 +183,75 @@ class BulkPaymentSerializer(serializers.Serializer):
     registration_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
     payment_status = serializers.ChoiceField(choices=TournamentRegistration.PAYMENT_CHOICES)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
+
+
+# ─── Federation Entry ──────────────────────────────────────────────────────────
+
+FED_PAYMENT_LABELS = {
+    'paid': 'Pago',
+    'pending': 'Aguardando pagamento',
+    'unknown': 'Não informado',
+}
+
+FED_STATUS_LABELS = {
+    'confirmed': 'Confirmado na chave',
+    'waiting_list': 'Lista de espera',
+    'pending_payment': 'Pagamento pendente',
+}
+
+
+def compute_fed_status(payment_status: str, slot_position, max_participants):
+    if max_participants and slot_position and slot_position > max_participants:
+        return 'waiting_list'
+    if payment_status == FederationEntry.PAYMENT_PAID:
+        return 'confirmed'
+    return 'pending_payment'
+
+
+class FederationEntrySerializer(serializers.ModelSerializer):
+    slot_position = serializers.SerializerMethodField()
+    in_draw = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
+    payment_status_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FederationEntry
+        fields = (
+            'id', 'category_text', 'player_name', 'player_external_id',
+            'ranking_position', 'payment_status', 'payment_status_label',
+            'source', 'notes', 'synced_at',
+            'slot_position', 'in_draw', 'status', 'status_label',
+        )
+
+    def _max_p(self, obj):
+        return getattr(obj, '_max_participants', None)
+
+    def get_slot_position(self, obj):
+        return getattr(obj, 'slot_position', None)
+
+    def get_in_draw(self, obj):
+        slot = getattr(obj, 'slot_position', None)
+        max_p = self._max_p(obj)
+        if slot is None:
+            return None
+        return (max_p is None) or (slot <= max_p)
+
+    def get_status(self, obj):
+        slot = getattr(obj, 'slot_position', None)
+        return compute_fed_status(obj.payment_status, slot, self._max_p(obj))
+
+    def get_status_label(self, obj):
+        return FED_STATUS_LABELS.get(self.get_status(obj), '')
+
+    def get_payment_status_label(self, obj):
+        return FED_PAYMENT_LABELS.get(obj.payment_status, obj.payment_status)
+
+
+class FederationEntryWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FederationEntry
+        fields = (
+            'edition', 'category_text', 'player_name', 'player_external_id',
+            'ranking_position', 'payment_status', 'source', 'notes',
+        )

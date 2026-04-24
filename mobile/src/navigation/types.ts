@@ -22,4 +22,5 @@ export type MainStackParamList = {
   Coach: undefined;
   AdminPanel: undefined;
   MyRegistrations: undefined;
+  RegistrationList: { editionId: number; editionTitle: string };
 };
