@@ -31,6 +31,22 @@ MATERIAL_FIELDS = {
     'status', 'surface', 'base_price_brl', 'title',
 }
 
+_DEDUP_STRIP = re.compile(r'[^a-z0-9]+')
+
+
+def _dedup_fingerprint(title: str, start_date, city: str, state: str) -> str:
+    """
+    Stable fingerprint for cross-source deduplication.
+    Two editions from different sources that share title + date + location
+    will produce the same fingerprint and be merged.
+    """
+    norm_title = _DEDUP_STRIP.sub('', unicodedata.normalize('NFKD', title.lower()).encode('ascii', 'ignore').decode())
+    norm_city = _DEDUP_STRIP.sub('', unicodedata.normalize('NFKD', city.lower()).encode('ascii', 'ignore').decode())
+    date_str = str(start_date)[:10] if start_date else ''
+    raw = f'{norm_title}|{date_str}|{norm_city}|{state.upper()[:2]}'
+    import hashlib
+    return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
 _YOUTH_KEYWORDS = {
     'infantojuvenil', 'infanto', 'juvenil', 'junior', 'júnior',
     'sub-', 'kids', 'mirim', 'petiz', 'escolinha', 'infantil',
@@ -102,6 +118,31 @@ class TournamentPersister:
             external_id=external_id,
         ).first()
 
+        # Cross-source deduplication: if no edition found by external_id, look for a
+        # fingerprint match from any other source to avoid creating duplicates.
+        if not ed and external_id:
+            v_city = (data.get('venue') or {}).get('city', '')
+            v_state = (data.get('venue') or {}).get('state', '')
+            fp = _dedup_fingerprint(
+                data.get('title') or data.get('canonical_name', ''),
+                data.get('start_date'),
+                v_city,
+                v_state,
+            )
+            if fp:
+                candidate = TournamentEdition.objects.filter(
+                    season_year=season_year,
+                    dedup_fingerprint=fp,
+                ).exclude(data_source=self.data_source).first()
+                if candidate:
+                    logger.info(
+                        'Dedup: merging %s (ext_id=%s) into existing edition %s (ext_id=%s)',
+                        self.data_source.connector_key, external_id,
+                        candidate.data_source.connector_key if candidate.data_source else '?',
+                        candidate.external_id,
+                    )
+                    ed = candidate
+
         created = False
         changes: dict = {}
 
@@ -109,6 +150,15 @@ class TournamentPersister:
             data.get('circuit', ''),
             data.get('title', ''),
             data.get('categories') or [],
+        )
+
+        v_city = (data.get('venue') or {}).get('city', '')
+        v_state = (data.get('venue') or {}).get('state', '')
+        fingerprint = _dedup_fingerprint(
+            data.get('title') or data.get('canonical_name', ''),
+            data.get('start_date'),
+            v_city,
+            v_state,
         )
 
         if not ed:
@@ -133,6 +183,7 @@ class TournamentPersister:
                 raw_payload=data,
                 data_confidence=TournamentEdition.CONFIDENCE_MED,
                 is_youth=is_youth,
+                dedup_fingerprint=fingerprint,
             )
             created = True
             TournamentChangeEvent.objects.create(
@@ -191,6 +242,8 @@ class TournamentPersister:
                 ed.raw_payload = data
                 if ed.is_youth is None:
                     ed.is_youth = is_youth
+                if fingerprint and not ed.dedup_fingerprint:
+                    ed.dedup_fingerprint = fingerprint
                 ed.save()
 
                 if changes:

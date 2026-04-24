@@ -10,7 +10,7 @@ import { MainStackParamList, MainTabParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { deleteAccount, uploadAvatar } from '../../services/auth';
-import { deleteProfile, listProfiles, setPrimary, updateProfile } from '../../services/data';
+import { deleteProfile, listProfiles, requestDataExport, setPrimary, updateProfile } from '../../services/data';
 import { extractApiError, mediaUrl } from '../../services/api';
 import { PlayerProfile } from '../../types';
 import { GENDER_LABELS, LEVEL_LABELS, ROLE_LABELS, TENNIS_CLASS_LABELS } from '../../utils/format';
@@ -242,15 +242,45 @@ export function ProfileScreen(_: Props) {
       </View>
 
       {/* Privacy */}
-      <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <Ionicons name="shield-outline" size={18} color={colors.textMuted} />
-          <AppText variant="body" style={{ fontWeight: '700' }}>Privacidade e dados</AppText>
-        </View>
-        <AppText variant="muted">Você pode solicitar a exclusão da sua conta e de todos os seus dados a qualquer momento, conforme a LGPD.</AppText>
-        <Button title="Excluir minha conta" variant="danger" onPress={handleDeleteAccount} style={{ marginTop: 4 }} />
-      </Card>
+      <PrivacyCard onDeleteAccount={handleDeleteAccount} />
     </Screen>
+  );
+}
+
+function PrivacyCard({ onDeleteAccount }: { onDeleteAccount: () => void }) {
+  const { colors } = useTheme();
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await requestDataExport();
+      Toast.show({ type: 'success', text1: 'Dados exportados!', text2: 'O arquivo JSON foi baixado.' });
+    } catch {
+      Toast.show({ type: 'error', text1: 'Não foi possível exportar os dados.' });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <Ionicons name="shield-outline" size={18} color={colors.textMuted} />
+        <AppText variant="body" style={{ fontWeight: '700' }}>Privacidade e dados (LGPD)</AppText>
+      </View>
+      <AppText variant="muted" style={{ marginBottom: 12 }}>
+        Conforme a LGPD, você pode exportar ou excluir todos os seus dados a qualquer momento.
+      </AppText>
+      <Button
+        title={exporting ? 'Exportando...' : 'Exportar meus dados'}
+        variant="secondary"
+        onPress={handleExport}
+        loading={exporting}
+        style={{ marginBottom: 8 }}
+      />
+      <Button title="Excluir minha conta" variant="danger" onPress={onDeleteAccount} />
+    </Card>
   );
 }
 

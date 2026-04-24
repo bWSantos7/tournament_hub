@@ -258,7 +258,9 @@ CSP_DEFAULT_SRC = ("'none'",)
 CSP_FRAME_ANCESTORS = ("'none'",)
 
 if not DEBUG:
-    SECURE_SSL_REDIRECT = False  # Railway terminates SSL at proxy level
+    # Railway terminates SSL at the proxy level, so SECURE_SSL_REDIRECT must stay False
+    # on Railway. Set SECURE_SSL_REDIRECT=True only when running behind no proxy.
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
@@ -277,6 +279,11 @@ SCRAPER_TIMEOUT = config('SCRAPER_TIMEOUT', default=30, cast=int)
 SCRAPER_RATE_LIMIT_SECONDS = config('SCRAPER_RATE_LIMIT_SECONDS', default=2, cast=int)
 
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
+# Web Push (VAPID) — generate keys with: python -c "from py_vapid import Vapid; v=Vapid(); v.generate_keys(); print(v.private_key, v.public_key)"
+VAPID_PRIVATE_KEY = config('VAPID_PRIVATE_KEY', default='')
+VAPID_PUBLIC_KEY = config('VAPID_PUBLIC_KEY', default='')
+VAPID_CLAIMS_EMAIL = config('VAPID_CLAIMS_EMAIL', default='')
 
 # Media files (avatars etc.)
 # Set CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name in .env / Railway vars

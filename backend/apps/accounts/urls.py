@@ -13,6 +13,7 @@ from .views import (
     verify_email_otp,
     password_reset_request,
     password_reset_confirm,
+    data_export,
     CoachAthleteViewSet,
 )
 
@@ -35,4 +36,6 @@ urlpatterns = [
     # Password reset
     path('password-reset/', password_reset_request, name='password_reset_request'),
     path('password-reset/confirm/', password_reset_confirm, name='password_reset_confirm'),
+    # LGPD data export
+    path('data-export/', data_export, name='data_export'),
 ]

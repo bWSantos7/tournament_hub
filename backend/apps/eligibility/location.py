@@ -18,6 +18,15 @@ def within_profile_radius(profile, edition) -> bool:
     if _same_city(profile.home_city, venue.city) and profile.home_state.upper() == venue.state.upper():
         return True
 
+    # Fast path: use pre-stored coordinates when available on both sides
+    if (
+        profile.home_lat is not None and profile.home_lng is not None
+        and venue.latitude is not None and venue.longitude is not None
+    ):
+        distance_km = haversine_km(profile.home_lat, profile.home_lng, venue.latitude, venue.longitude)
+        return distance_km <= profile.travel_radius_km
+
+    # Slow path: geocode via Nominatim (results are LRU-cached per process)
     distance_km = calculate_profile_distance_km(
         profile.home_city,
         profile.home_state,
@@ -28,6 +37,25 @@ def within_profile_radius(profile, edition) -> bool:
     if distance_km is None:
         return False
     return distance_km <= profile.travel_radius_km
+
+
+def geocode_and_save_profile(profile) -> bool:
+    """
+    Geocode a profile's home_city/state and persist lat/lng.
+    Called from profile post-save signal when city or state changes.
+    Returns True if coordinates were updated.
+    """
+    if not profile.home_city or not profile.home_state:
+        return False
+    coords = geocode_location(profile.home_city, profile.home_state)
+    if not coords:
+        return False
+    lat, lng = coords
+    from apps.players.models import PlayerProfile
+    PlayerProfile.objects.filter(pk=profile.pk).update(home_lat=lat, home_lng=lng)
+    profile.home_lat = lat
+    profile.home_lng = lng
+    return True
 
 
 def calculate_profile_distance_km(

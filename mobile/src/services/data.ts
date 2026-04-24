@@ -96,6 +96,12 @@ export async function getAthleteWatchlist(id: number) {
   return res.data;
 }
 
+// ----- LGPD -----
+export async function requestDataExport() {
+  const res = await api.get('/api/auth/data-export/', { responseType: 'blob' });
+  return res.data as Blob;
+}
+
 // ----- Alerts -----
 export async function listAlerts() {
   const res = await api.get<Paginated<Alert> | Alert[]>('/api/alerts/');

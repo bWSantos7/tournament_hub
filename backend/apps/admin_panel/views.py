@@ -4,6 +4,8 @@ Admin panel: consolidated endpoints used by the admin web UI:
 - Review queue (low-confidence / recently changed / missing-link editions)
 - User management (list, edit, delete)
 - Statistics (time-series charts)
+- Edition inline patch (manual override / confidence update)
+- Data source management
 """
 from datetime import timedelta, date
 from django.contrib.auth import get_user_model
@@ -16,7 +18,7 @@ from rest_framework.response import Response
 
 from apps.core.permissions import IsAdmin
 from apps.tournaments.models import TournamentEdition
-from apps.sources.models import DataSource
+from apps.sources.models import DataSource, Organization
 from apps.ingestion.models import IngestionRun
 from apps.audit.models import AuditLog
 from apps.alerts.models import Alert
@@ -240,3 +242,101 @@ def review_queue(request):
         'missing_official_url': TournamentEditionListSerializer(no_link, many=True).data,
         'recently_changed': TournamentEditionListSerializer(recently_changed, many=True).data,
     })
+
+
+class EditionPatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TournamentEdition
+        fields = (
+            'id', 'title', 'status', 'start_date', 'end_date',
+            'entry_open_at', 'entry_close_at', 'official_source_url',
+            'base_price_brl', 'data_confidence', 'is_manual_override', 'is_youth',
+        )
+        read_only_fields = ('id',)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAdmin])
+def edition_patch(request, pk):
+    """Inline admin edit for a TournamentEdition (manual override / curation)."""
+    try:
+        edition = TournamentEdition.objects.get(pk=pk)
+    except TournamentEdition.DoesNotExist:
+        return Response({'detail': 'Edição não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+    ser = EditionPatchSerializer(edition, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    instance = ser.save(
+        reviewed_at=timezone.now(),
+        reviewed_by=request.user,
+        is_manual_override=True,
+    )
+    return Response(TournamentEditionListSerializer(instance).data)
+
+
+class DataSourceSerializer(serializers.ModelSerializer):
+    org_name = serializers.CharField(source='organization.short_name', read_only=True)
+
+    class Meta:
+        model = DataSource
+        fields = (
+            'id', 'organization', 'org_name', 'source_name', 'slug',
+            'connector_key', 'source_type', 'base_url',
+            'fetch_schedule_cron', 'priority', 'enabled',
+            'legal_notes', 'created_at', 'updated_at',
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def data_sources_list(request):
+    """List all data sources with optional filter by enabled status."""
+    qs = DataSource.objects.select_related('organization').order_by('organization__short_name', 'priority')
+    enabled = request.query_params.get('enabled')
+    if enabled is not None:
+        qs = qs.filter(enabled=enabled.lower() in ('1', 'true', 'yes'))
+    return Response(DataSourceSerializer(qs, many=True).data)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAdmin])
+def data_source_patch(request, pk):
+    """Toggle or update a data source configuration."""
+    try:
+        source = DataSource.objects.get(pk=pk)
+    except DataSource.DoesNotExist:
+        return Response({'detail': 'Fonte não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+    allowed_fields = {'enabled', 'fetch_schedule_cron', 'priority', 'legal_notes', 'base_url'}
+    patch_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+    ser = DataSourceSerializer(source, data=patch_data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def ingestion_runs_list(request):
+    """Recent ingestion runs (last 50)."""
+    qs = (
+        IngestionRun.objects
+        .select_related('data_source__organization')
+        .order_by('-started_at')[:50]
+    )
+
+    class RunSerializer(serializers.ModelSerializer):
+        source_name = serializers.CharField(source='data_source.source_name', read_only=True)
+        org_name = serializers.CharField(source='data_source.organization.short_name', read_only=True)
+
+        class Meta:
+            model = IngestionRun
+            fields = (
+                'id', 'source_name', 'org_name', 'status',
+                'started_at', 'finished_at',
+                'items_fetched', 'items_created', 'items_updated', 'changes_detected',
+                'error_summary',
+            )
+
+    return Response(RunSerializer(qs, many=True).data)

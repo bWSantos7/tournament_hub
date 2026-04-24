@@ -8,7 +8,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.html import strip_tags
 
-from .models import Alert, UserAlertPreference
+from .models import Alert, PushSubscription, UserAlertPreference
 from apps.watchlist.models import WatchlistItem
 from apps.tournaments.models import TournamentEdition, TournamentChangeEvent
 
@@ -62,6 +62,78 @@ def send_email_alert(self, alert_id: int):
         raise self.retry(exc=exc)
 
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_push_alert(self, alert_id: int):
+    """Send a Web Push notification for an Alert using pywebpush."""
+    try:
+        alert = Alert.objects.select_related('user').get(pk=alert_id)
+    except Alert.DoesNotExist:
+        logger.warning('Alert %s not found', alert_id)
+        return
+
+    subscriptions = PushSubscription.objects.filter(user=alert.user)
+    if not subscriptions.exists():
+        alert.status = Alert.STATUS_FAILED
+        alert.error = 'no_push_subscription'
+        alert.save(update_fields=['status', 'error', 'updated_at'])
+        return
+
+    vapid_private_key = getattr(settings, 'VAPID_PRIVATE_KEY', '')
+    vapid_claims_email = getattr(settings, 'VAPID_CLAIMS_EMAIL', settings.DEFAULT_FROM_EMAIL)
+    if not vapid_private_key:
+        alert.status = Alert.STATUS_FAILED
+        alert.error = 'no_vapid_key'
+        alert.save(update_fields=['status', 'error', 'updated_at'])
+        logger.warning('VAPID_PRIVATE_KEY not configured — push notifications disabled')
+        return
+
+    try:
+        from pywebpush import webpush, WebPushException
+        import json as _json
+        notification_payload = _json.dumps({
+            'title': alert.title,
+            'body': alert.body,
+            'data': {'alert_id': alert.id, 'kind': alert.kind},
+        })
+    except ImportError:
+        alert.status = Alert.STATUS_FAILED
+        alert.error = 'pywebpush_not_installed'
+        alert.save(update_fields=['status', 'error', 'updated_at'])
+        return
+
+    sent = 0
+    errors = []
+    for sub in subscriptions:
+        try:
+            webpush(
+                subscription_info={
+                    'endpoint': sub.endpoint,
+                    'keys': {'p256dh': sub.p256dh, 'auth': sub.auth},
+                },
+                data=notification_payload,
+                vapid_private_key=vapid_private_key,
+                vapid_claims={'sub': f'mailto:{vapid_claims_email}'},
+            )
+            sent += 1
+        except Exception as exc:
+            errors.append(str(exc)[:100])
+            logger.warning('Push send failed for sub %s: %s', sub.id, exc)
+            # 410 Gone means the subscription is expired — clean it up
+            if '410' in str(exc):
+                sub.delete()
+
+    if sent > 0:
+        alert.status = Alert.STATUS_SENT
+        alert.dispatched_at = timezone.now()
+        alert.save(update_fields=['status', 'dispatched_at', 'updated_at'])
+    else:
+        alert.status = Alert.STATUS_FAILED
+        alert.error = '; '.join(errors)[:300]
+        alert.save(update_fields=['status', 'error', 'updated_at'])
+        if errors:
+            raise self.retry(exc=Exception(alert.error))
+
+
 def _create_alert(user, edition, kind, channel, title, body='', payload=None, dedup_key=''):
     if dedup_key and Alert.objects.filter(user=user, dedup_key=dedup_key).exists():
         return None
@@ -77,6 +149,8 @@ def _create_alert(user, edition, kind, channel, title, body='', payload=None, de
     )
     if channel == Alert.CHANNEL_EMAIL:
         send_email_alert.delay(alert.id)
+    elif channel == Alert.CHANNEL_PUSH:
+        send_push_alert.delay(alert.id)
     else:
         alert.status = Alert.STATUS_SENT
         alert.dispatched_at = timezone.now()
@@ -135,6 +209,14 @@ def dispatch_deadline_alerts(self):
                     title=title, body=body,
                     payload={'days_before': d},
                     dedup_key=dedup + ':app',
+                )
+            if prefs.push_enabled:
+                _create_alert(
+                    user=item.user, edition=item.edition,
+                    kind=Alert.KIND_DEADLINE, channel=Alert.CHANNEL_PUSH,
+                    title=title, body=body,
+                    payload={'days_before': d},
+                    dedup_key=dedup + ':push',
                 )
     logger.info('Dispatched %d deadline alerts', created)
     return created

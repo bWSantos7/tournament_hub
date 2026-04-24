@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,7 @@ import { AppText, Button, Card, EmptyState, LoadingBlock, Screen, SectionHeader 
 import api, { extractApiError } from '../../services/api';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'AdminPanel'>;
-type Tab = 'dashboard' | 'stats' | 'users';
+type Tab = 'dashboard' | 'review' | 'sources' | 'stats' | 'users';
 
 interface Dashboard {
   counts: {
@@ -58,7 +58,9 @@ export function AdminPanelScreen({ navigation }: Props) {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'dashboard', label: 'Dashboard' },
-    { key: 'stats', label: 'Estatísticas' },
+    { key: 'review', label: 'Curadoria' },
+    { key: 'sources', label: 'Fontes' },
+    { key: 'stats', label: 'Stats' },
     { key: 'users', label: 'Usuários' },
   ];
 
@@ -90,6 +92,8 @@ export function AdminPanelScreen({ navigation }: Props) {
       </View>
 
       {tab === 'dashboard' && <DashboardTab />}
+      {tab === 'review' && <ReviewTab />}
+      {tab === 'sources' && <SourcesTab />}
       {tab === 'stats' && <StatsTab />}
       {tab === 'users' && <UsersTab />}
     </Screen>
@@ -452,6 +456,235 @@ function EditUserModal({ user, onClose, onSaved }: { user: AdminUser; onClose: (
         </View>
       </View>
     </View>
+  );
+}
+
+// ─── Review Tab ───────────────────────────────────────────────────────────────
+
+interface ReviewSection {
+  low_confidence: ReviewEdition[];
+  missing_official_url: ReviewEdition[];
+  recently_changed: ReviewEdition[];
+}
+interface ReviewEdition {
+  id: number;
+  title: string;
+  status: string;
+  start_date: string | null;
+  data_confidence: string;
+  official_source_url: string;
+  is_manual_override: boolean;
+}
+
+function ReviewTab() {
+  const { colors } = useTheme();
+  const [data, setData] = useState<ReviewSection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editUrl, setEditUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await api.get<ReviewSection>('/api/admin-panel/review-queue/');
+      setData(res.data);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao carregar fila', text2: extractApiError(err) });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function saveUrl(id: number) {
+    setSaving(true);
+    try {
+      await api.patch(`/api/admin-panel/editions/${id}/`, { official_source_url: editUrl });
+      Toast.show({ type: 'success', text1: 'URL atualizada.' });
+      setEditingId(null);
+      await load();
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao salvar', text2: extractApiError(err) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function markHighConfidence(id: number) {
+    try {
+      await api.patch(`/api/admin-panel/editions/${id}/`, { data_confidence: 'high', is_manual_override: true });
+      Toast.show({ type: 'success', text1: 'Confiança atualizada.' });
+      await load();
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro', text2: extractApiError(err) });
+    }
+  }
+
+  if (loading) return <LoadingBlock />;
+  if (!data) return <EmptyState title="Nenhum dado disponível." />;
+
+  const sections: { key: keyof ReviewSection; label: string; color: string }[] = [
+    { key: 'low_confidence', label: 'Baixa confiança', color: '#ef4444' },
+    { key: 'missing_official_url', label: 'Sem URL oficial', color: '#f59e0b' },
+    { key: 'recently_changed', label: 'Recentemente alterados', color: colors.accentBlue },
+  ];
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <Button title="Atualizar" variant="secondary" onPress={load} style={{ marginBottom: 12 }} />
+      {sections.map((sec) => {
+        const items = data[sec.key];
+        if (!items.length) return null;
+        return (
+          <View key={sec.key} style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: sec.color }} />
+              <AppText variant="body" style={{ fontWeight: '700', color: sec.color }}>{sec.label} ({items.length})</AppText>
+            </View>
+            {items.map((ed) => (
+              <View key={ed.id} style={{ backgroundColor: colors.bgCard, borderRadius: 14, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.borderSubtle }}>
+                <AppText variant="body" style={{ fontWeight: '600', fontSize: 13, marginBottom: 4 }} numberOfLines={2}>{ed.title}</AppText>
+                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <View style={{ backgroundColor: `${sec.color}20`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <AppText variant="muted" style={{ fontSize: 10, color: sec.color }}>{ed.data_confidence}</AppText>
+                  </View>
+                  {ed.is_manual_override && (
+                    <View style={{ backgroundColor: `${colors.accentNeon}20`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                      <AppText variant="muted" style={{ fontSize: 10, color: colors.accentNeon }}>Override</AppText>
+                    </View>
+                  )}
+                </View>
+                {editingId === ed.id ? (
+                  <View style={{ gap: 8 }}>
+                    <TextInput
+                      style={{ backgroundColor: colors.bgElevated, borderRadius: 8, padding: 8, color: colors.textPrimary, fontSize: 12 }}
+                      value={editUrl}
+                      onChangeText={setEditUrl}
+                      placeholder="https://..."
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                    />
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Button title="Salvar URL" onPress={() => saveUrl(ed.id)} loading={saving} style={{ flex: 1 }} />
+                      <Button title="Cancelar" variant="ghost" onPress={() => setEditingId(null)} style={{ flex: 1 }} />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Pressable
+                      onPress={() => { setEditingId(ed.id); setEditUrl(ed.official_source_url || ''); }}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6, backgroundColor: colors.bgElevated, borderRadius: 8 }}
+                    >
+                      <Ionicons name="link-outline" size={14} color={colors.textMuted} />
+                      <AppText variant="muted" style={{ fontSize: 11 }} numberOfLines={1}>{ed.official_source_url || 'Sem URL'}</AppText>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => markHighConfidence(ed.id)}
+                      style={{ padding: 6, backgroundColor: `${colors.accentNeon}15`, borderRadius: 8 }}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={16} color={colors.accentNeon} />
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+// ─── Sources Tab ──────────────────────────────────────────────────────────────
+
+interface DataSource {
+  id: number;
+  org_name: string;
+  source_name: string;
+  connector_key: string;
+  source_type: string;
+  priority: string;
+  enabled: boolean;
+  fetch_schedule_cron: string;
+}
+
+function SourcesTab() {
+  const { colors } = useTheme();
+  const [sources, setSources] = useState<DataSource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState<number | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await api.get<DataSource[]>('/api/admin-panel/sources/');
+      setSources(res.data);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao carregar fontes', text2: extractApiError(err) });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleSource(source: DataSource) {
+    setToggling(source.id);
+    try {
+      const res = await api.patch<DataSource>(`/api/admin-panel/sources/${source.id}/`, { enabled: !source.enabled });
+      setSources((prev) => prev.map((s) => (s.id === source.id ? res.data : s)));
+      Toast.show({ type: 'success', text1: `${source.source_name} ${res.data.enabled ? 'ativada' : 'desativada'}.` });
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao alterar fonte', text2: extractApiError(err) });
+    } finally {
+      setToggling(null);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <LoadingBlock />;
+  if (!sources.length) return <EmptyState title="Nenhuma fonte configurada." />;
+
+  const grouped = sources.reduce<Record<string, DataSource[]>>((acc, s) => {
+    const k = s.org_name || 'Outros';
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(s);
+    return acc;
+  }, {});
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      {Object.entries(grouped).map(([org, items]) => (
+        <View key={org} style={{ marginBottom: 16 }}>
+          <AppText variant="section" style={{ marginBottom: 8 }}>{org}</AppText>
+          {items.map((s) => (
+            <View key={s.id} style={{ backgroundColor: colors.bgCard, borderRadius: 14, padding: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <AppText variant="body" style={{ fontWeight: '600', fontSize: 13 }}>{s.source_name}</AppText>
+                <AppText variant="muted" style={{ fontSize: 10, marginTop: 2 }}>{s.connector_key} • {s.source_type} • {s.priority}</AppText>
+                <AppText variant="muted" style={{ fontSize: 10 }}>{s.fetch_schedule_cron}</AppText>
+              </View>
+              <Pressable
+                onPress={() => toggleSource(s)}
+                disabled={toggling === s.id}
+                style={{ padding: 6 }}
+              >
+                {toggling === s.id ? (
+                  <ActivityIndicator size="small" color={colors.accentNeon} />
+                ) : (
+                  <Ionicons
+                    name={s.enabled ? 'toggle' : 'toggle-outline'}
+                    size={28}
+                    color={s.enabled ? colors.accentNeon : colors.textMuted}
+                  />
+                )}
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 

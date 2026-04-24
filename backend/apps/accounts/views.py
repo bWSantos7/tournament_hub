@@ -314,6 +314,78 @@ class CoachAthleteViewSet(viewsets.ModelViewSet):
         return Response({'athlete': link.athlete.email, 'watchlist': serializer.data})
 
 
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def data_export(request):
+    """
+    LGPD RF-026: Returns a JSON snapshot of all personal data for the authenticated user.
+    Covers user record, player profiles, watchlist items, tournament results and alerts.
+    """
+    from apps.players.models import PlayerProfile
+    from apps.watchlist.models import WatchlistItem, TournamentResult
+    from apps.alerts.models import Alert
+
+    user = request.user
+
+    profiles = list(
+        PlayerProfile.objects.filter(user=user).values(
+            'id', 'display_name', 'birth_year', 'birth_date', 'gender',
+            'home_state', 'home_city', 'travel_radius_km', 'competitive_level',
+            'dominant_hand', 'tennis_class', 'is_primary', 'external_ids',
+            'created_at', 'updated_at',
+        )
+    )
+    profile_ids = [p['id'] for p in profiles]
+
+    watchlist = list(
+        WatchlistItem.objects.filter(user=user).select_related('edition__tournament').values(
+            'id', 'edition__id', 'edition__title', 'edition__start_date', 'edition__end_date',
+            'user_status', 'alert_on_deadline', 'alert_on_changes', 'alert_on_draws',
+            'created_at', 'updated_at',
+        )
+    )
+
+    results = list(
+        TournamentResult.objects.filter(watchlist_item__user=user).values(
+            'id', 'watchlist_item_id', 'category_played', 'position', 'wins', 'losses',
+            'notes', 'created_at',
+        )
+    )
+
+    alerts = list(
+        Alert.objects.filter(user=user).values(
+            'id', 'kind', 'channel', 'status', 'title', 'dispatched_at', 'read_at', 'created_at',
+        )
+    )
+
+    payload = {
+        'exported_at': timezone.now().isoformat(),
+        'user': {
+            'id': user.id,
+            'email': user.email,
+            'full_name': user.full_name,
+            'phone': user.phone,
+            'role': user.role,
+            'email_verified': user.email_verified,
+            'marketing_consent': user.marketing_consent,
+            'consent_version': user.consent_version,
+            'consented_at': user.consented_at.isoformat() if user.consented_at else None,
+            'date_joined': user.date_joined.isoformat() if hasattr(user, 'date_joined') and user.date_joined else None,
+            'last_login': user.last_login.isoformat() if user.last_login else None,
+        },
+        'player_profiles': profiles,
+        'watchlist': watchlist,
+        'tournament_results': results,
+        'alerts': alerts,
+    }
+
+    from django.http import JsonResponse
+    import json
+    response = JsonResponse(payload, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+    response['Content-Disposition'] = f'attachment; filename="tournament_hub_data_{user.id}.json"'
+    return response
+
+
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def password_reset_confirm(request):

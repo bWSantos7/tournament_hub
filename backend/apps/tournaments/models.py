@@ -147,6 +147,12 @@ class TournamentEdition(TimestampedModel):
         help_text='True = torneio infantojuvenil (categorias até 18 anos). Null = não classificado.',
     )
 
+    # Cross-source deduplication fingerprint (sha1 of title+date+city)
+    dedup_fingerprint = models.CharField(
+        max_length=16, blank=True, db_index=True,
+        help_text='Short hash for cross-source dedup (title+date+city). Empty = not computed.',
+    )
+
     class Meta:
         ordering = ['-start_date', '-entry_close_at']
         indexes = [
@@ -154,6 +160,7 @@ class TournamentEdition(TimestampedModel):
             models.Index(fields=['start_date']),
             models.Index(fields=['season_year']),
             models.Index(fields=['raw_content_hash']),
+            models.Index(fields=['dedup_fingerprint']),
         ]
         unique_together = ('tournament', 'season_year', 'external_id')
 

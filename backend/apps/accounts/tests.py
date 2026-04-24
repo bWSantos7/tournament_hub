@@ -1,0 +1,109 @@
+"""Tests for accounts app: registration, OTP, LGPD export, data export."""
+from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+from rest_framework.test import APIClient
+
+User = get_user_model()
+
+
+class RegistrationTestCase(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    @patch('apps.accounts.views.generate_and_store', return_value='123456')
+    @patch('apps.accounts.views._send_mail')
+    def test_register_creates_user(self, mock_mail, mock_otp):
+        res = self.client.post('/api/auth/register/', {
+            'email': 'test@example.com',
+            'password': 'Str0ngPass!',
+            'full_name': 'Test User',
+            'phone': '+5511999999999',
+            'role': 'player',
+            'lgpd_consent': True,
+        }, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertIn('access', res.data)
+        self.assertTrue(User.objects.filter(email='test@example.com').exists())
+
+    def test_register_duplicate_email_returns_400(self):
+        User.objects.create_user(email='dup@example.com', password='pass')
+        res = self.client.post('/api/auth/register/', {
+            'email': 'dup@example.com',
+            'password': 'Str0ngPass!',
+            'full_name': 'Dup',
+            'phone': '+5511999999999',
+            'role': 'player',
+            'lgpd_consent': True,
+        }, format='json')
+        self.assertIn(res.status_code, [400, 422])
+
+
+class OTPTestCase(TestCase):
+    def test_generate_invalid_type_raises(self):
+        from apps.accounts.otp import generate_and_store, VALID_OTP_TYPES
+        with self.assertRaises(ValueError):
+            generate_and_store(1, 'invalid_type')
+
+    def test_valid_types_accepted(self):
+        from apps.accounts.otp import generate_and_store, VALID_OTP_TYPES
+        from unittest.mock import patch
+        for otp_type in VALID_OTP_TYPES:
+            with patch('apps.accounts.otp.cache') as mock_cache:
+                mock_cache.set.return_value = None
+                mock_cache.delete.return_value = None
+                code = generate_and_store(1, otp_type)
+                self.assertEqual(len(code), 6)
+                self.assertTrue(code.isdigit())
+
+    def test_verify_correct_code(self):
+        from apps.accounts.otp import generate_and_store, verify
+        from unittest.mock import patch, MagicMock
+        mock_cache = MagicMock()
+        mock_cache.get.side_effect = lambda key, default=None: '654321' if 'code' in key else 0
+        with patch('apps.accounts.otp.cache', mock_cache):
+            result = verify(1, 'email', '654321')
+        self.assertTrue(result)
+
+    def test_verify_wrong_code(self):
+        from apps.accounts.otp import verify
+        from unittest.mock import patch, MagicMock
+        mock_cache = MagicMock()
+        mock_cache.get.side_effect = lambda key, default=None: '654321' if 'code' in key else 0
+        with patch('apps.accounts.otp.cache', mock_cache):
+            result = verify(1, 'email', '000000')
+        self.assertFalse(result)
+
+
+class LGPDDataExportTestCase(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email='export@example.com',
+            password='testpass123',
+            full_name='Export User',
+        )
+
+    def test_data_export_requires_auth(self):
+        res = self.client.get('/api/auth/data-export/')
+        self.assertEqual(res.status_code, 401)
+
+    def test_data_export_returns_json(self):
+        self.client.force_authenticate(user=self.user)
+        res = self.client.get('/api/auth/data-export/')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('application/json', res.get('Content-Type', ''))
+        data = res.json()
+        self.assertIn('user', data)
+        self.assertIn('player_profiles', data)
+        self.assertIn('watchlist', data)
+        self.assertIn('alerts', data)
+        self.assertEqual(data['user']['email'], 'export@example.com')
+
+    def test_data_export_has_attachment_header(self):
+        self.client.force_authenticate(user=self.user)
+        res = self.client.get('/api/auth/data-export/')
+        self.assertIn('Content-Disposition', res)
+        self.assertIn('attachment', res['Content-Disposition'])

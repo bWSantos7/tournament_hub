@@ -10,6 +10,8 @@ logger = logging.getLogger('apps.accounts')
 OTP_TTL = 600        # seconds (10 minutes)
 MAX_ATTEMPTS = 5
 
+VALID_OTP_TYPES = frozenset({'email', 'phone', 'password_reset'})
+
 
 def _code_key(user_id: int, otp_type: str) -> str:
     return f'otp:code:{otp_type}:{user_id}'
@@ -21,6 +23,8 @@ def _attempts_key(user_id: int, otp_type: str) -> str:
 
 def generate_and_store(user_id: int, otp_type: str) -> str:
     """Generate a 6-digit OTP, store in Redis and return the plain code."""
+    if otp_type not in VALID_OTP_TYPES:
+        raise ValueError(f'Invalid OTP type: {otp_type!r}. Must be one of {VALID_OTP_TYPES}')
     code = ''.join(random.choices(string.digits, k=6))
     cache.set(_code_key(user_id, otp_type), code, OTP_TTL)
     cache.delete(_attempts_key(user_id, otp_type))
