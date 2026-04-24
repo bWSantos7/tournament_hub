@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { MainStackParamList, MainTabParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { deleteAccount, logout, uploadAvatar } from '../../services/auth';
+import { deleteAccount, uploadAvatar } from '../../services/auth';
 import { deleteProfile, listProfiles, setPrimary, updateProfile } from '../../services/data';
 import { extractApiError, mediaUrl } from '../../services/api';
 import { PlayerProfile } from '../../types';
@@ -50,7 +50,7 @@ const RADIUS_OPTIONS = [
 
 export function ProfileScreen(_: Props) {
   const { colors, theme, toggle } = useTheme();
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
   const navigation = useNavigation<StackNav>();
   const [loading, setLoading] = useState(true);
   const [profiles, setProfiles] = useState<PlayerProfile[]>([]);
