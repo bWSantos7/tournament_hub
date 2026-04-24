@@ -197,7 +197,7 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
             const iconName = isEligible ? 'checkmark-circle' : 'close-circle';
             const iconColor = isEligible ? colors.accentNeon : '#ef4444';
             return (
-              <Card key={item.tournament_category_id}>
+              <Card key={item.tournament_category_id} style={{ marginBottom: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <Ionicons name={iconName} size={16} color={iconColor} />
                   <AppText variant="body" style={{ fontWeight: '700', flex: 1 }}>{item.source_text}</AppText>

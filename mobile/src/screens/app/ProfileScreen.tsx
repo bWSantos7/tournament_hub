@@ -68,9 +68,12 @@ export function ProfileScreen(_: Props) {
       <SectionHeader title="Perfil" subtitle="Conta, perfis esportivos e privacidade" />
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <Pressable onPress={handleAvatarChange}>
+          <Pressable onPress={handleAvatarChange} style={{ position: 'relative' }}>
             <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: `${colors.accentNeon}22`, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
               {user?.avatar ? <Image source={{ uri: mediaUrl(user.avatar) }} style={{ width: '100%', height: '100%' }} /> : <AppText variant="body" style={{ color: colors.accentNeon, fontWeight: '700', fontSize: 22 }}>{avatarLetter}</AppText>}
+            </View>
+            <View style={{ position: 'absolute', bottom: 0, right: 0, width: 22, height: 22, borderRadius: 11, backgroundColor: colors.accentNeon, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.bgBase }}>
+              <Ionicons name="camera" size={11} color={colors.bgBase} />
             </View>
           </Pressable>
           <View style={{ flex: 1 }}>

@@ -25,7 +25,7 @@ export function TournamentCard({ edition, showEligibility = false, onPress }: { 
   const b = badge(status, colors);
   const location = [edition.venue_city, edition.venue_state].filter(Boolean).join('/');
   return (
-    <Pressable onPress={onPress}>
+    <Pressable onPress={onPress} style={{ marginBottom: 10 }}>
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
           <View style={{ flex: 1, gap: 4 }}>
@@ -46,7 +46,7 @@ export function TournamentCard({ edition, showEligibility = false, onPress }: { 
             <AppText variant="caption">{fmtDateRange(edition.start_date, edition.end_date)}</AppText>
           </View>
           {location ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Ionicons name="location-outline" size={14} color={colors.textSecondary} /><AppText variant="caption">{location}</AppText></View> : null}
-          {edition.entry_close_at ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Ionicons name="time-outline" size={14} color={colors.statusClosing} /><AppText variant="caption" style={{ color: colors.statusClosing }}>Prazo {fmtRelative(edition.entry_close_at)}</AppText></View> : null}
+          {edition.entry_close_at ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Ionicons name="time-outline" size={14} color={colors.statusClosing} /><AppText variant="caption" style={{ color: colors.statusClosing }}>Inscrições até {fmtRelative(edition.entry_close_at)}</AppText></View> : null}
           {edition.base_price_brl !== null && edition.base_price_brl !== undefined ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Ionicons name="receipt-outline" size={14} color={colors.textPrimary} /><AppText variant="caption">Inscrição {fmtBRL(edition.base_price_brl)}</AppText></View> : null}
         </View>
 

@@ -43,7 +43,8 @@ export function HomeScreen(_: Props) {
         setHasProfile((profiles as PlayerProfile[]).length > 0);
         setProfile(primary);
         setClosing((closingData as TournamentEditionList[]).slice(0, 6));
-        setRecent((recentData.results || []).slice(0, 6));
+        const HIDDEN_STATUSES = ['finished', 'canceled'];
+        setRecent(((recentData.results || []) as TournamentEditionList[]).filter((ed) => !HIDDEN_STATUSES.includes(ed.dynamic_status || ed.status)).slice(0, 6));
         setUnreadCount((alerts || []).length);
         if (primary) {
           const compatData = await compatibleForProfile(primary.id, { page_size: 8 }).catch(() => ({ results: [] as TournamentEditionList[] }));
