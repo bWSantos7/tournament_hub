@@ -12,6 +12,9 @@ import { CoachScreen } from '../screens/app/CoachScreen';
 import { AdminPanelScreen } from '../screens/app/AdminPanelScreen';
 import { MyRegistrationsScreen } from '../screens/app/MyRegistrationsScreen';
 import { RegistrationListScreen } from '../screens/app/RegistrationListScreen';
+import { PlansScreen } from '../screens/app/PlansScreen';
+import { CheckoutScreen } from '../screens/app/CheckoutScreen';
+import { SubscriptionScreen } from '../screens/app/SubscriptionScreen';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
@@ -38,6 +41,9 @@ export function RootNavigator() {
       <MainStack.Screen name="AdminPanel" component={AdminPanelScreen} />
       <MainStack.Screen name="MyRegistrations" component={MyRegistrationsScreen} />
       <MainStack.Screen name="RegistrationList" component={RegistrationListScreen} />
+      <MainStack.Screen name="Plans" component={PlansScreen} options={{ title: 'Planos' }} />
+      <MainStack.Screen name="Checkout" component={CheckoutScreen} options={{ title: 'Finalizar assinatura' }} />
+      <MainStack.Screen name="Subscription" component={SubscriptionScreen} options={{ title: 'Minha assinatura' }} />
     </MainStack.Navigator>
   );
 }

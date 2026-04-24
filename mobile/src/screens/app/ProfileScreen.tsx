@@ -163,6 +163,14 @@ export function ProfileScreen(_: Props) {
           <AppText variant="body">{theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}</AppText>
         </Pressable>
         <Pressable
+          onPress={() => navigation.navigate('Subscription')}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}
+        >
+          <Ionicons name="card-outline" size={18} color={colors.textSecondary} />
+          <AppText variant="body">Minha assinatura</AppText>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+        </Pressable>
+        <Pressable
           onPress={() => navigation.navigate('MyRegistrations')}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}
         >

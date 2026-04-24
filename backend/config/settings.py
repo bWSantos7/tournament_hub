@@ -57,6 +57,7 @@ LOCAL_APPS = [
     'apps.admin_panel',
     'apps.marketplace',
     'apps.registrations',
+    'apps.billing',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -284,6 +285,11 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 VAPID_PRIVATE_KEY = config('VAPID_PRIVATE_KEY', default='')
 VAPID_PUBLIC_KEY = config('VAPID_PUBLIC_KEY', default='')
 VAPID_CLAIMS_EMAIL = config('VAPID_CLAIMS_EMAIL', default='')
+
+# Asaas payment gateway
+ASAAS_API_KEY       = config('ASAAS_API_KEY', default='')
+ASAAS_ENVIRONMENT   = config('ASAAS_ENVIRONMENT', default='sandbox')
+ASAAS_WEBHOOK_TOKEN = config('ASAAS_WEBHOOK_TOKEN', default='')
 
 # Media files (avatars etc.)
 # Set CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name in .env / Railway vars

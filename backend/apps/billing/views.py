@@ -1,0 +1,433 @@
+"""
+Billing API views.
+
+Endpoints:
+  GET  /api/billing/plans/                  — list all active plans with features
+  GET  /api/billing/subscription/           — current user's subscription
+  POST /api/billing/subscription/checkout/  — subscribe / upgrade
+  POST /api/billing/subscription/cancel/    — cancel subscription
+  POST /api/billing/subscription/reactivate/— re-activate before period ends
+  GET  /api/billing/payments/               — payment history
+  GET  /api/billing/features/               — check accessible features
+  POST /api/billing/webhooks/asaas/         — Asaas webhook receiver
+"""
+import logging
+from datetime import date
+
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import permissions, status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+
+from apps.audit.models import AuditLog
+from .models import Feature, Payment, Plan, Subscription, WebhookEvent
+from .serializers import (
+    CancelSubscriptionSerializer,
+    CheckoutSerializer,
+    PaymentSerializer,
+    PlanSerializer,
+    SubscriptionSerializer,
+)
+
+logger = logging.getLogger('apps.billing')
+
+
+# ── Plans (public) ─────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def plans_list(request):
+    """Return all active plans with their feature matrix."""
+    qs = Plan.objects.filter(is_active=True).prefetch_related('plan_features__feature')
+    return Response(PlanSerializer(qs, many=True).data)
+
+
+# ── Current subscription ───────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def subscription_detail(request):
+    """Return the authenticated user's subscription. Creates a free plan sub if none exists."""
+    sub = _get_or_create_free_subscription(request.user)
+    return Response(SubscriptionSerializer(sub).data)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def subscription_checkout(request):
+    """
+    Subscribe to a plan or upgrade/downgrade.
+
+    When ASAAS_API_KEY is configured, this creates a real Asaas subscription.
+    Without API key, the subscription is created locally in pending state —
+    useful for testing the full flow before payment goes live.
+    """
+    ser = CheckoutSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    d = ser.validated_data
+
+    try:
+        plan = Plan.objects.get(slug=d['plan_slug'], is_active=True)
+    except Plan.DoesNotExist:
+        return Response({'detail': 'Plano não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    with transaction.atomic():
+        sub, created = Subscription.objects.get_or_create(
+            user=request.user,
+            defaults={
+                'plan': plan,
+                'billing_period': d['billing_period'],
+                'status': Subscription.STATUS_PENDING,
+                'start_date': date.today(),
+            },
+        )
+        if not created:
+            sub.plan = plan
+            sub.billing_period = d['billing_period']
+            sub.cancel_at_period_end = False
+            sub.save(update_fields=['plan', 'billing_period', 'cancel_at_period_end', 'updated_at'])
+
+        # Free plan — activate immediately, no payment needed
+        if plan.slug == Plan.SLUG_FREE:
+            sub.status = Subscription.STATUS_ACTIVE
+            sub.start_date = date.today()
+            sub.next_due_date = None
+            sub.save(update_fields=['status', 'start_date', 'next_due_date', 'updated_at'])
+            _log_action(request.user, 'billing.subscribe_free', f'Subscribed to Free plan')
+            return Response(SubscriptionSerializer(sub).data)
+
+        # Paid plan — attempt Asaas integration
+        asaas_result = None
+        try:
+            from .services.asaas_service import create_subscription, AsaasNotConfiguredError
+            payment_method_map = {
+                'credit_card': 'CREDIT_CARD',
+                'pix': 'PIX',
+                'boleto': 'BOLETO',
+                'debit_card': 'DEBIT_CARD',
+            }
+            asaas_result = create_subscription(
+                user=request.user,
+                plan=plan,
+                billing_period=d['billing_period'],
+                payment_method=payment_method_map[d['payment_method']],
+                card_token=d.get('card_token', ''),
+            )
+            sub.asaas_subscription_id = asaas_result.get('id', '')
+            sub.status = Subscription.STATUS_PENDING
+            sub.save(update_fields=['asaas_subscription_id', 'status', 'updated_at'])
+            logger.info('Asaas subscription %s created for user %s', sub.asaas_subscription_id, request.user.id)
+
+        except Exception as exc:  # AsaasNotConfiguredError or network error
+            # Gateway not yet connected — persist locally for when it's activated
+            logger.warning('Asaas not available (%s); subscription created locally.', exc)
+            sub.status = Subscription.STATUS_PENDING
+
+        _log_action(request.user, 'billing.checkout', f'Checkout plan={plan.slug} method={d["payment_method"]}')
+
+    resp_data = SubscriptionSerializer(sub).data
+    if asaas_result:
+        resp_data['asaas'] = asaas_result  # expose payment links to client
+    return Response(resp_data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def subscription_cancel(request):
+    """Cancel the user's subscription."""
+    ser = CancelSubscriptionSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    immediate = ser.validated_data['immediate']
+
+    try:
+        sub = request.user.subscription
+    except Subscription.DoesNotExist:
+        return Response({'detail': 'Nenhuma assinatura ativa.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if sub.status == Subscription.STATUS_CANCELED:
+        return Response({'detail': 'Assinatura já cancelada.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        if immediate:
+            if sub.asaas_subscription_id:
+                try:
+                    from .services.asaas_service import cancel_subscription
+                    cancel_subscription(sub.asaas_subscription_id)
+                except Exception as exc:
+                    logger.warning('Asaas cancel failed: %s', exc)
+
+            sub.status = Subscription.STATUS_CANCELED
+            sub.canceled_at = timezone.now()
+            sub.save(update_fields=['status', 'canceled_at', 'updated_at'])
+        else:
+            sub.cancel_at_period_end = True
+            sub.save(update_fields=['cancel_at_period_end', 'updated_at'])
+
+    _log_action(request.user, 'billing.cancel', f'immediate={immediate}')
+    return Response(SubscriptionSerializer(sub).data)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def subscription_reactivate(request):
+    """Remove cancel_at_period_end flag (keep subscription alive)."""
+    try:
+        sub = request.user.subscription
+    except Subscription.DoesNotExist:
+        return Response({'detail': 'Nenhuma assinatura encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if sub.status == Subscription.STATUS_CANCELED:
+        return Response({'detail': 'Assinatura já cancelada definitivamente. Faça uma nova assinatura.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    sub.cancel_at_period_end = False
+    sub.save(update_fields=['cancel_at_period_end', 'updated_at'])
+    _log_action(request.user, 'billing.reactivate', '')
+    return Response(SubscriptionSerializer(sub).data)
+
+
+# ── Payment history ────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def payment_history(request):
+    """Return the user's payment history (last 50)."""
+    qs = Payment.objects.filter(user=request.user).order_by('-created_at')[:50]
+    return Response(PaymentSerializer(qs, many=True).data)
+
+
+# ── Feature access map ─────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def my_features(request):
+    """
+    Return a map of all features with their access status and limit for the current user.
+    Useful for the mobile app to decide which UI elements to show/hide.
+    """
+    from .permissions import user_has_feature, user_feature_limit
+    features = Feature.objects.all()
+    result = {}
+    for f in features:
+        result[f.code] = {
+            'has_access': user_has_feature(request.user, f.code),
+            'limit': user_feature_limit(request.user, f.code),
+            'name': f.name,
+        }
+    return Response(result)
+
+
+# ── Asaas Webhook ──────────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def asaas_webhook(request):
+    """
+    Receive and process Asaas webhook events.
+    https://docs.asaas.com/reference/webhook
+
+    Validates token, persists the raw event, then processes it.
+    """
+    # Token validation
+    token = request.META.get('HTTP_ASAAS_WEBHOOK_TOKEN', '')
+    from .services.asaas_service import validate_webhook_token
+    if not validate_webhook_token(token):
+        logger.warning('Invalid Asaas webhook token received')
+        return Response({'detail': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    payload = request.data
+    event_type = payload.get('event', 'UNKNOWN')
+    payment_data = payload.get('payment', {})
+    asaas_id = payment_data.get('id', '') or payload.get('subscription', {}).get('id', '')
+
+    # Persist raw event for audit/replay
+    event = WebhookEvent.objects.create(
+        event_type=event_type,
+        asaas_id=asaas_id,
+        payload=payload,
+    )
+
+    try:
+        _process_webhook_event(event_type, payload, event)
+        event.processed = True
+        event.save(update_fields=['processed', 'updated_at'])
+    except Exception as exc:
+        logger.exception('Error processing webhook event %s', event_type)
+        event.error = str(exc)[:300]
+        event.save(update_fields=['error', 'updated_at'])
+
+    return Response({'received': True})
+
+
+def _process_webhook_event(event_type: str, payload: dict, event: WebhookEvent):
+    """Dispatch webhook event to the appropriate handler."""
+    handlers = {
+        'PAYMENT_CONFIRMED':           _handle_payment_confirmed,
+        'PAYMENT_RECEIVED':            _handle_payment_confirmed,
+        'PAYMENT_OVERDUE':             _handle_payment_overdue,
+        'PAYMENT_DELETED':             _handle_payment_deleted,
+        'PAYMENT_REFUNDED':            _handle_payment_refunded,
+        'PAYMENT_CHARGEBACK_DISPUTE':  _handle_payment_chargeback,
+        'SUBSCRIPTION_CREATED':        _handle_subscription_created,
+        'SUBSCRIPTION_UPDATED':        _handle_subscription_updated,
+        'SUBSCRIPTION_INACTIVATED':    _handle_subscription_inactivated,
+        'SUBSCRIPTION_DELETED':        _handle_subscription_deleted,
+    }
+    handler = handlers.get(event_type)
+    if handler:
+        handler(payload)
+    else:
+        logger.info('Unhandled Asaas webhook event: %s', event_type)
+
+
+def _find_subscription_by_asaas(asaas_subscription_id: str):
+    return Subscription.objects.filter(asaas_subscription_id=asaas_subscription_id).first()
+
+
+def _handle_payment_confirmed(payload: dict):
+    p = payload.get('payment', {})
+    asaas_sub_id = p.get('subscription', '')
+    sub = _find_subscription_by_asaas(asaas_sub_id) if asaas_sub_id else None
+
+    pay, _ = Payment.objects.update_or_create(
+        asaas_payment_id=p.get('id', ''),
+        defaults={
+            'user': sub.user if sub else _user_from_external_ref(p.get('externalReference', '')),
+            'subscription': sub,
+            'amount': p.get('value', 0),
+            'payment_method': _map_billing_type(p.get('billingType', '')),
+            'status': Payment.STATUS_PAID,
+            'transaction_id': p.get('id', ''),
+            'paid_at': timezone.now(),
+            'description': p.get('description', ''),
+            'raw_response': p,
+        },
+    )
+    if sub:
+        from datetime import date as date_cls, timedelta
+        sub.status = Subscription.STATUS_ACTIVE
+        sub.start_date = sub.start_date or date_cls.today()
+        if sub.billing_period == 'yearly':
+            sub.next_due_date = date_cls.today().replace(year=date_cls.today().year + 1)
+        else:
+            from dateutil.relativedelta import relativedelta
+            sub.next_due_date = date_cls.today() + relativedelta(months=1)
+        sub.save(update_fields=['status', 'start_date', 'next_due_date', 'updated_at'])
+        logger.info('Subscription %s activated after payment confirmed', sub.id)
+
+
+def _handle_payment_overdue(payload: dict):
+    p = payload.get('payment', {})
+    asaas_sub_id = p.get('subscription', '')
+    sub = _find_subscription_by_asaas(asaas_sub_id) if asaas_sub_id else None
+    if sub:
+        sub.status = Subscription.STATUS_UNPAID
+        sub.save(update_fields=['status', 'updated_at'])
+
+    Payment.objects.filter(asaas_payment_id=p.get('id', '')).update(status=Payment.STATUS_OVERDUE)
+
+
+def _handle_payment_deleted(payload: dict):
+    p = payload.get('payment', {})
+    Payment.objects.filter(asaas_payment_id=p.get('id', '')).update(status=Payment.STATUS_FAILED)
+
+
+def _handle_payment_refunded(payload: dict):
+    p = payload.get('payment', {})
+    Payment.objects.filter(asaas_payment_id=p.get('id', '')).update(status=Payment.STATUS_REFUNDED)
+
+
+def _handle_payment_chargeback(payload: dict):
+    p = payload.get('payment', {})
+    asaas_sub_id = p.get('subscription', '')
+    sub = _find_subscription_by_asaas(asaas_sub_id) if asaas_sub_id else None
+    if sub:
+        sub.status = Subscription.STATUS_UNPAID
+        sub.save(update_fields=['status', 'updated_at'])
+    logger.warning('Chargeback dispute for payment %s', p.get('id'))
+
+
+def _handle_subscription_created(payload: dict):
+    s = payload.get('subscription', {})
+    sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub:
+        sub.status = Subscription.STATUS_ACTIVE
+        sub.save(update_fields=['status', 'updated_at'])
+
+
+def _handle_subscription_updated(payload: dict):
+    s = payload.get('subscription', {})
+    sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub and s.get('status') == 'ACTIVE':
+        sub.status = Subscription.STATUS_ACTIVE
+        sub.save(update_fields=['status', 'updated_at'])
+
+
+def _handle_subscription_inactivated(payload: dict):
+    s = payload.get('subscription', {})
+    sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub:
+        sub.status = Subscription.STATUS_EXPIRED
+        sub.save(update_fields=['status', 'updated_at'])
+
+
+def _handle_subscription_deleted(payload: dict):
+    s = payload.get('subscription', {})
+    sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub:
+        sub.status = Subscription.STATUS_CANCELED
+        sub.canceled_at = timezone.now()
+        sub.save(update_fields=['status', 'canceled_at', 'updated_at'])
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _map_billing_type(billing_type: str) -> str:
+    return {
+        'CREDIT_CARD': Payment.METHOD_CREDIT_CARD,
+        'PIX':         Payment.METHOD_PIX,
+        'DEBIT_CARD':  Payment.METHOD_DEBIT_CARD,
+        'BOLETO':      Payment.METHOD_BOLETO,
+    }.get(billing_type, '')
+
+
+def _user_from_external_ref(ref: str):
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    try:
+        return User.objects.get(pk=int(ref))
+    except (User.DoesNotExist, ValueError, TypeError):
+        return None
+
+
+def _get_or_create_free_subscription(user):
+    try:
+        return user.subscription
+    except Subscription.DoesNotExist:
+        from .models import Plan
+        try:
+            free = Plan.objects.get(slug=Plan.SLUG_FREE)
+        except Plan.DoesNotExist:
+            free = Plan.objects.filter(is_active=True).order_by('price_monthly').first()
+            if not free:
+                raise
+
+        return Subscription.objects.create(
+            user=user,
+            plan=free,
+            status=Subscription.STATUS_ACTIVE,
+            start_date=date.today(),
+        )
+
+
+def _log_action(user, action: str, detail: str):
+    try:
+        AuditLog.objects.create(
+            actor=user,
+            action=action,
+            resource_type='subscription',
+            resource_id=str(user.id),
+            changes={'detail': detail},
+        )
+    except Exception:
+        pass

@@ -23,4 +23,7 @@ export type MainStackParamList = {
   AdminPanel: undefined;
   MyRegistrations: undefined;
   RegistrationList: { editionId: number; editionTitle: string };
+  Plans: undefined;
+  Checkout: { plan: import('../services/billing').Plan; billingPeriod: 'monthly' | 'yearly' };
+  Subscription: undefined;
 };

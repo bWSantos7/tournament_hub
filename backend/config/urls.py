@@ -40,6 +40,7 @@ urlpatterns = [
     path('api/admin-panel/', include('apps.admin_panel.urls')),
     path('api/marketplace/', include('apps.marketplace.urls')),
     path('api/registrations/', include('apps.registrations.urls')),
+    path('api/billing/', include('apps.billing.urls')),
 
     # API schema
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

@@ -1,0 +1,13 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('plans/',                       views.plans_list,               name='billing_plans_list'),
+    path('subscription/',                views.subscription_detail,      name='billing_subscription_detail'),
+    path('subscription/checkout/',       views.subscription_checkout,    name='billing_subscription_checkout'),
+    path('subscription/cancel/',         views.subscription_cancel,      name='billing_subscription_cancel'),
+    path('subscription/reactivate/',     views.subscription_reactivate,  name='billing_subscription_reactivate'),
+    path('payments/',                    views.payment_history,          name='billing_payment_history'),
+    path('features/',                    views.my_features,              name='billing_my_features'),
+    path('webhooks/asaas/',              views.asaas_webhook,            name='billing_asaas_webhook'),
+]
