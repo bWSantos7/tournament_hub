@@ -46,11 +46,14 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
             .prefetch_related('categories__normalized_category', 'links')
             .annotate(categories_count=Count('categories'))
         )
-        # Default: only show youth/junior tournaments (is_youth=True).
-        # Pass ?youth_only=false to include all (admin use).
+        # Default: only show youth/junior tournaments.
+        # is_youth=True  → classificado como juvenil → mostrar
+        # is_youth=None  → ainda não classificado → mostrar (inclui acervo existente)
+        # is_youth=False → explicitamente adulto  → ocultar
+        # Pass ?youth_only=false to bypass this filter (admin use).
         youth_param = self.request.query_params.get('youth_only', 'true').lower()
         if youth_param != 'false':
-            qs = qs.filter(Q(is_youth=True))
+            qs = qs.filter(Q(is_youth=True) | Q(is_youth__isnull=True))
         return qs
 
     def get_serializer_class(self):
