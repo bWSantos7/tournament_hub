@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -33,17 +33,50 @@ export function AppText({ children, variant = 'body', style, numberOfLines }: { 
   return <Text style={[map[variant], style]} numberOfLines={numberOfLines}>{children}</Text>;
 }
 
-export function Input({ label, style, ...props }: TextInputProps & { label?: string }) {
+export function Input({ label, required, style, ...props }: TextInputProps & { label?: string; required?: boolean }) {
   const { colors } = useTheme();
   return (
     <View style={{ gap: 6 }}>
-      {label ? <AppText variant="caption" style={{ fontWeight: '600' }}>{label}</AppText> : null}
+      {label ? (
+        <View style={{ flexDirection: 'row', gap: 3 }}>
+          <AppText variant="caption" style={{ fontWeight: '600' }}>{label}</AppText>
+          {required ? <AppText variant="caption" style={{ color: '#ef4444', fontWeight: '700' }}>*</AppText> : null}
+        </View>
+      ) : null}
       <TextInput
         placeholderTextColor={colors.textMuted}
         style={[styles.input, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle, color: colors.textPrimary }, style]}
         {...props}
       />
     </View>
+  );
+}
+
+export function Checkbox({ value, onValueChange, label, sublabel }: {
+  value: boolean;
+  onValueChange: (v: boolean) => void;
+  label: string;
+  sublabel?: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={() => onValueChange(!value)}
+      style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}
+    >
+      <View style={{
+        width: 22, height: 22, borderRadius: 6, borderWidth: 2,
+        borderColor: value ? colors.accentNeon : colors.borderSubtle,
+        backgroundColor: value ? `${colors.accentNeon}22` : 'transparent',
+        alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0,
+      }}>
+        {value ? <Ionicons name="checkmark" size={14} color={colors.accentNeon} /> : null}
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <AppText variant="caption" style={{ fontWeight: '600', lineHeight: 18 }}>{label}</AppText>
+        {sublabel ? sublabel : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -83,22 +116,43 @@ export function EmptyState({ title, subtitle }: { title: string; subtitle?: stri
   );
 }
 
-export function SelectField({ label, value, options, onSelect, placeholder, loading }: {
+export function SelectField({ label, value, options, onSelect, placeholder, loading, searchable, required }: {
   label?: string;
   value: string;
   options: { value: string; label: string }[];
   onSelect: (value: string) => void;
   placeholder?: string;
   loading?: boolean;
+  searchable?: boolean;
+  required?: boolean;
 }) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const selected = options.find((o) => o.value === value);
+
+  const filtered = useMemo(() => {
+    if (!searchable || !query.trim()) return options;
+    const q = query.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return options.filter((o) =>
+      o.label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(q)
+    );
+  }, [options, query, searchable]);
+
+  function handleOpen() {
+    if (!loading) { setQuery(''); setOpen(true); }
+  }
+
   return (
     <View style={{ gap: 6 }}>
-      {label ? <AppText variant="caption" style={{ fontWeight: '600' }}>{label}</AppText> : null}
+      {label ? (
+        <View style={{ flexDirection: 'row', gap: 3 }}>
+          <AppText variant="caption" style={{ fontWeight: '600' }}>{label}</AppText>
+          {required ? <AppText variant="caption" style={{ color: '#ef4444', fontWeight: '700' }}>*</AppText> : null}
+        </View>
+      ) : null}
       <Pressable
-        onPress={() => !loading && setOpen(true)}
+        onPress={handleOpen}
         style={[styles.input, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
       >
         <Text style={{ color: selected ? colors.textPrimary : colors.textMuted, fontSize: 15, flex: 1 }} numberOfLines={1}>
@@ -109,27 +163,54 @@ export function SelectField({ label, value, options, onSelect, placeholder, load
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
           <Pressable style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={() => setOpen(false)} />
-          <View style={{ backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%' }}>
+          <View style={{ backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%' }}>
             <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <AppText variant="section">{label || 'Selecione'}</AppText>
               <Pressable onPress={() => setOpen(false)} style={{ padding: 4 }}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
-            <FlatList
-              data={options}
-              keyExtractor={(item) => item.value}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => { onSelect(item.value); setOpen(false); }}
-                  style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: `${colors.borderSubtle}60`, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-                >
-                  <Text style={{ color: colors.textPrimary, fontSize: 15, flex: 1 }}>{item.label}</Text>
-                  {item.value === value ? <Ionicons name="checkmark" size={18} color={colors.accentNeon} /> : null}
-                </Pressable>
-              )}
-              keyboardShouldPersistTaps="handled"
-            />
+            {searchable ? (
+              <View style={{ paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.bgBase, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: colors.borderSubtle }}>
+                  <Ionicons name="search" size={16} color={colors.textMuted} />
+                  <TextInput
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder="Buscar..."
+                    placeholderTextColor={colors.textMuted}
+                    style={{ flex: 1, color: colors.textPrimary, fontSize: 15 }}
+                    autoFocus
+                  />
+                  {query.length > 0 ? (
+                    <Pressable onPress={() => setQuery('')}>
+                      <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+            {loading ? <LoadingBlock /> : (
+              <FlatList
+                data={filtered}
+                keyExtractor={(item) => item.value}
+                renderItem={({ item }) => (
+                  <Pressable
+                    onPress={() => { onSelect(item.value); setOpen(false); }}
+                    style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: `${colors.borderSubtle}60`, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    <Text style={{ color: colors.textPrimary, fontSize: 15, flex: 1 }}>{item.label}</Text>
+                    {item.value === value ? <Ionicons name="checkmark" size={18} color={colors.accentNeon} /> : null}
+                  </Pressable>
+                )}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  <View style={{ padding: 24, alignItems: 'center' }}>
+                    <AppText variant="muted">Nenhum resultado para "{query}"</AppText>
+                  </View>
+                }
+              />
+            )}
           </View>
         </View>
       </Modal>

@@ -357,6 +357,7 @@ function ProfileEditor({ profile, onSaved, onCancel }: { profile: PlayerProfile;
         onSelect={(v) => setForm({ ...form, home_city: v })}
         placeholder={loadingCities ? 'Carregando...' : 'Selecione a cidade'}
         loading={loadingCities}
+        searchable
       />
       <SelectField
         label="Raio de viagem"

@@ -114,12 +114,21 @@ export const STATUS_LABELS: Record<TournamentStatus, string> = {
   unknown: 'Desconhecido',
   announced: 'Anunciado',
   open: 'Inscrições Abertas',
-  closing_soon: 'Encerrando em breve',
+  closing_soon: 'Encerrando inscrições em breve',
   closed: 'Inscrições Encerradas',
   draws_published: 'Chaves Publicadas',
   in_progress: 'Em Andamento',
   finished: 'Finalizado',
   canceled: 'Cancelado',
+};
+
+export const SURFACE_LABELS: Record<string, string> = {
+  clay: 'Saibro',
+  hard: 'Rápida / Sintética',
+  grass: 'Grama',
+  sand: 'Areia',
+  carpet: 'Carpete',
+  unknown: 'Não informada',
 };
 
 export function fmtBRL(value: string | number | null | undefined): string {

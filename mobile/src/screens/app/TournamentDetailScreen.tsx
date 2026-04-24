@@ -8,10 +8,10 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { AppText, Button, Card, EmptyState, Input, LoadingBlock, Screen, SectionHeader, SelectField } from '../../components/ui';
 import { TournamentEditionDetail, TournamentRegistration } from '../../types';
 import { getEdition, evaluateEdition, editionHistory } from '../../services/tournaments';
-import { listProfiles, toggleWatchlist } from '../../services/data';
+import { listProfiles, listWatchlist, toggleWatchlist } from '../../services/data';
 import { myRegistrations, registerForEdition, withdrawRegistration } from '../../services/registrations';
 import { pickBestProfile } from '../../utils/profile';
-import { fmtBRL, fmtDateRange, formatChangeEventDetails, formatChangeEventTitle, translateReason, STATUS_LABELS } from '../../utils/format';
+import { fmtBRL, fmtDate, fmtDateRange, formatChangeEventDetails, formatChangeEventTitle, translateReason, STATUS_LABELS, SURFACE_LABELS } from '../../utils/format';
 import { extractApiError } from '../../services/api';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'TournamentDetail'>;
@@ -56,17 +56,19 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
     try {
       const d = await getEdition(id);
       setDetail(d);
-      const [profiles, hist, regs] = await Promise.all([
+      const [profiles, hist, regs, watchlist] = await Promise.all([
         listProfiles().catch(() => []),
         editionHistory(id).catch(() => []),
         myRegistrations().catch(() => []),
+        listWatchlist().catch(() => []),
       ]);
       setHistory(hist as any[]);
-      // Find any existing registration for this edition
       const existing = (regs as TournamentRegistration[]).find(
         (r) => r.edition_id === id && !r.is_withdrawn
       );
       setMyReg(existing ?? null);
+      const wl = Array.isArray(watchlist) ? watchlist : (watchlist as any).results ?? [];
+      setWatching(wl.some((w: any) => (w.edition === id || w.edition_id === id)));
       const primary = pickBestProfile(profiles as any[]);
       if (primary) {
         const elig = await evaluateEdition(id, primary.id).catch(() => null);
@@ -186,30 +188,36 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
         <View style={{ gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
-            <AppText variant="caption">{fmtDateRange(detail.start_date, detail.end_date)}</AppText>
+            <AppText variant="caption">Período do torneio: {fmtDateRange(detail.start_date, detail.end_date)}</AppText>
           </View>
+          {(detail.entry_open_at || detail.entry_close_at) ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="create-outline" size={14} color={colors.textMuted} />
+              <AppText variant="caption">Inscrições: {fmtDateRange(detail.entry_open_at, detail.entry_close_at)}</AppText>
+            </View>
+          ) : null}
+          {detail.entry_close_at && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="time-outline" size={14} color={colors.textMuted} />
+              <AppText variant="caption">Prazo final de inscrição: {fmtDate(detail.entry_close_at, "dd/MM/yyyy 'às' HH:mm")}</AppText>
+            </View>
+          )}
           {(detail.venue_city || detail.venue_state) && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-              <AppText variant="caption">{[detail.venue_city, detail.venue_state].filter(Boolean).join(' / ')}</AppText>
+              <AppText variant="caption">Local: {[detail.venue_city, detail.venue_state].filter(Boolean).join(' / ')}</AppText>
             </View>
           )}
-          {detail.surface && (
+          {detail.surface && detail.surface !== 'unknown' && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="tennisball-outline" size={14} color={colors.textMuted} />
-              <AppText variant="caption">Superfície: {detail.surface}</AppText>
+              <AppText variant="caption">Superfície: {SURFACE_LABELS[detail.surface] ?? detail.surface}</AppText>
             </View>
           )}
           {detail.base_price_brl != null && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="cash-outline" size={14} color={colors.textMuted} />
-              <AppText variant="caption">Inscrição: {fmtBRL(detail.base_price_brl)}</AppText>
-            </View>
-          )}
-          {detail.entry_close_at && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="time-outline" size={14} color={colors.textMuted} />
-              <AppText variant="caption">Prazo: {fmtDateRange(detail.entry_close_at, detail.entry_close_at)}</AppText>
+              <AppText variant="caption">Taxa de inscrição: {fmtBRL(detail.base_price_brl)}</AppText>
             </View>
           )}
         </View>
@@ -340,7 +348,7 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
         <View>
           <SectionHeader title="Links" />
           {detail.links.map((link) => (
-            <Card key={link.id}>
+            <Card key={link.id} style={{ marginBottom: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <AppText variant="body" style={{ fontWeight: '600' }}>{link.label || link.link_type}</AppText>
                 <Pressable onPress={() => Linking.openURL(link.url)}>
@@ -357,7 +365,7 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
         <View>
           <SectionHeader title="Histórico de alterações" />
           {history.slice(0, 5).map((event: any) => (
-            <Card key={event.id}>
+            <Card key={event.id} style={{ marginBottom: 8 }}>
               <AppText variant="body" style={{ fontWeight: '700' }}>{formatChangeEventTitle(event.event_type)}</AppText>
               {formatChangeEventDetails(event).map((line) => (
                 <AppText key={line} variant="muted">• {line}</AppText>

@@ -172,6 +172,7 @@ export function OnboardingScreen({ navigation }: Props) {
           onSelect={(v) => setForm({ ...form, home_city: v })}
           placeholder={loadingCities ? 'Carregando cidades...' : (cities.length === 0 ? 'Selecione o estado primeiro' : 'Selecione a cidade')}
           loading={loadingCities}
+          searchable
         />
         <SelectField
           label="Raio de viagem"
