@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, View } from 'react-native';
+import { Linking, Pressable, Share, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -82,6 +82,17 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
     }
   }
 
+  async function onShare() {
+    if (!detail) return;
+    try {
+      await Share.share({
+        title: detail.title,
+        message: `${detail.title}${detail.official_source_url ? `\n${detail.official_source_url}` : ''}`,
+        url: detail.official_source_url || undefined,
+      });
+    } catch {}
+  }
+
   const statusColor = detail ? (STATUS_COLORS[detail.status] ?? colors.textMuted) : colors.textMuted;
   const statusLabel = detail ? (STATUS_LABELS[detail.status] ?? detail.status) : '';
 
@@ -124,9 +135,12 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
   return (
     <Screen>
       {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <Pressable onPress={() => navigation.goBack()} style={{ padding: 4 }}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+        </Pressable>
+        <Pressable onPress={onShare} style={{ padding: 4 }}>
+          <Ionicons name="share-outline" size={22} color={colors.textPrimary} />
         </Pressable>
       </View>
 

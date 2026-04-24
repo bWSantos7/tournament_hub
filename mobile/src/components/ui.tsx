@@ -1,5 +1,6 @@
-import React from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -79,6 +80,60 @@ export function EmptyState({ title, subtitle }: { title: string; subtitle?: stri
       <AppText variant="body" style={{ fontWeight: '600', textAlign: 'center' }}>{title}</AppText>
       {subtitle ? <AppText variant="muted" style={{ textAlign: 'center', marginTop: 6 }}>{subtitle}</AppText> : null}
     </Card>
+  );
+}
+
+export function SelectField({ label, value, options, onSelect, placeholder, loading }: {
+  label?: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onSelect: (value: string) => void;
+  placeholder?: string;
+  loading?: boolean;
+}) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.value === value);
+  return (
+    <View style={{ gap: 6 }}>
+      {label ? <AppText variant="caption" style={{ fontWeight: '600' }}>{label}</AppText> : null}
+      <Pressable
+        onPress={() => !loading && setOpen(true)}
+        style={[styles.input, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+      >
+        <Text style={{ color: selected ? colors.textPrimary : colors.textMuted, fontSize: 15, flex: 1 }} numberOfLines={1}>
+          {loading ? 'Carregando...' : (selected ? selected.label : (placeholder || 'Selecione...'))}
+        </Text>
+        {loading ? <ActivityIndicator size="small" color={colors.textMuted} /> : <Ionicons name="chevron-down" size={16} color={colors.textMuted} />}
+      </Pressable>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={() => setOpen(false)} />
+          <View style={{ backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%' }}>
+            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <AppText variant="section">{label || 'Selecione'}</AppText>
+              <Pressable onPress={() => setOpen(false)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </Pressable>
+            </View>
+            <FlatList
+              data={options}
+              keyExtractor={(item) => item.value}
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => { onSelect(item.value); setOpen(false); }}
+                  style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: `${colors.borderSubtle}60`, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <Text style={{ color: colors.textPrimary, fontSize: 15, flex: 1 }}>{item.label}</Text>
+                  {item.value === value ? <Ionicons name="checkmark" size={18} color={colors.accentNeon} /> : null}
+                </Pressable>
+              )}
+              keyboardShouldPersistTaps="handled"
+            />
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
