@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Alert, Image, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -81,14 +81,40 @@ export function ProfileScreen(_: Props) {
     catch { Toast.show({ type: 'error', text1: 'Não foi possível definir o perfil principal.' }); }
   }
 
-  async function removeProfile(id: number) {
-    try { await deleteProfile(id); await load(); Toast.show({ type: 'success', text1: 'Perfil removido.' }); }
-    catch (err) { Toast.show({ type: 'error', text1: 'Erro ao remover perfil', text2: extractApiError(err) }); }
+  function removeProfile(id: number) {
+    Alert.alert(
+      'Remover perfil',
+      'Tem certeza que deseja remover este perfil esportivo?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: async () => {
+            try { await deleteProfile(id); await load(); Toast.show({ type: 'success', text1: 'Perfil removido.' }); }
+            catch (err) { Toast.show({ type: 'error', text1: 'Erro ao remover perfil', text2: extractApiError(err) }); }
+          },
+        },
+      ],
+    );
   }
 
-  async function handleDeleteAccount() {
-    try { await deleteAccount(); setUser(null); }
-    catch (err) { Toast.show({ type: 'error', text1: 'Erro ao excluir conta', text2: extractApiError(err) }); }
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Excluir conta',
+      'Esta ação é irreversível. Todos os seus dados serão permanentemente removidos. Deseja continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir conta',
+          style: 'destructive',
+          onPress: async () => {
+            try { await deleteAccount(); setUser(null); }
+            catch (err) { Toast.show({ type: 'error', text1: 'Erro ao excluir conta', text2: extractApiError(err) }); }
+          },
+        },
+      ],
+    );
   }
 
   const avatarLetter = (user?.full_name || user?.email || 'U').slice(0, 1).toUpperCase();

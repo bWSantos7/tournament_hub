@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
 import { MainStackParamList, MainTabParamList } from '../../navigation/types';
@@ -29,34 +29,43 @@ export function HomeScreen(_: Props) {
   const [closing, setClosing] = useState<TournamentEditionList[]>([]);
   const [recent, setRecent] = useState<TournamentEditionList[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const hasLoadedRef = useRef(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [profiles, closingData, recentData, alerts] = await Promise.all([
-          listProfiles().catch(() => []),
-          closingSoon(14).catch(() => []),
-          listEditions({ page_size: 8, ordering: '-created_at' }).catch(() => ({ results: [] } as any)),
-          unreadAlerts().catch(() => []),
-        ]);
-        const primary = pickBestProfile(profiles as PlayerProfile[]);
-        setHasProfile((profiles as PlayerProfile[]).length > 0);
-        setProfile(primary);
-        setClosing((closingData as TournamentEditionList[]).slice(0, 6));
-        const HIDDEN_STATUSES = ['finished', 'canceled'];
-        setRecent(((recentData.results || []) as TournamentEditionList[]).filter((ed) => !HIDDEN_STATUSES.includes(ed.dynamic_status || ed.status)).slice(0, 6));
-        setUnreadCount((alerts || []).length);
-        if (primary) {
-          const compatData = await compatibleForProfile(primary.id, { page_size: 8 }).catch(() => ({ results: [] as TournamentEditionList[] }));
-          setCompat((compatData.results || []).slice(0, 8));
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        if (!hasLoadedRef.current) setLoading(true);
+        try {
+          const [profiles, closingData, recentData, alerts] = await Promise.all([
+            listProfiles().catch(() => []),
+            closingSoon(14).catch(() => []),
+            listEditions({ page_size: 8, ordering: '-created_at' }).catch(() => ({ results: [] } as any)),
+            unreadAlerts().catch(() => []),
+          ]);
+          if (!active) return;
+          const primary = pickBestProfile(profiles as PlayerProfile[]);
+          setHasProfile((profiles as PlayerProfile[]).length > 0);
+          setProfile(primary);
+          setClosing((closingData as TournamentEditionList[]).slice(0, 6));
+          const HIDDEN_STATUSES = ['finished', 'canceled'];
+          setRecent(((recentData.results || []) as TournamentEditionList[]).filter((ed) => !HIDDEN_STATUSES.includes(ed.dynamic_status || ed.status)).slice(0, 6));
+          setUnreadCount((alerts || []).length);
+          if (primary) {
+            const compatData = await compatibleForProfile(primary.id, { page_size: 8 }).catch(() => ({ results: [] as TournamentEditionList[] }));
+            if (!active) return;
+            setCompat((compatData.results || []).slice(0, 8));
+          }
+          hasLoadedRef.current = true;
+        } catch {
+          Toast.show({ type: 'error', text1: 'Erro ao carregar início' });
+        } finally {
+          if (active) setLoading(false);
         }
-      } catch {
-        Toast.show({ type: 'error', text1: 'Erro ao carregar início' });
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+      })();
+      return () => { active = false; };
+    }, []),
+  );
 
   if (loading) return <Screen><LoadingBlock /></Screen>;
 

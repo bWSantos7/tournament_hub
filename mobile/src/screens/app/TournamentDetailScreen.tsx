@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Linking, Modal, Pressable, Share, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, Share, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -111,15 +111,28 @@ export function TournamentDetailScreen({ route, navigation }: Props) {
     }
   }
 
-  async function onWithdraw() {
+  function onWithdraw() {
     if (!myReg) return;
-    try {
-      await withdrawRegistration(myReg.id);
-      setMyReg(null);
-      Toast.show({ type: 'success', text1: 'Inscrição cancelada.' });
-    } catch (err) {
-      Toast.show({ type: 'error', text1: 'Erro ao cancelar', text2: extractApiError(err) });
-    }
+    Alert.alert(
+      'Cancelar inscrição',
+      'Tem certeza que deseja cancelar sua inscrição neste torneio?',
+      [
+        { text: 'Não, manter', style: 'cancel' },
+        {
+          text: 'Sim, cancelar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await withdrawRegistration(myReg.id);
+              setMyReg(null);
+              Toast.show({ type: 'success', text1: 'Inscrição cancelada.' });
+            } catch (err) {
+              Toast.show({ type: 'error', text1: 'Erro ao cancelar', text2: extractApiError(err) });
+            }
+          },
+        },
+      ],
+    );
   }
 
   const statusColor = detail ? (STATUS_COLORS[detail.status] ?? colors.textMuted) : colors.textMuted;

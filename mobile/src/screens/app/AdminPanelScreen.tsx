@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -301,14 +301,27 @@ function UsersTab() {
 
   useEffect(() => { load(); }, []);
 
-  async function handleDelete(user: AdminUser) {
-    try {
-      await api.delete(`/api/admin-panel/users/${user.id}/`);
-      setUsers((prev) => prev.filter((u) => u.id !== user.id));
-      Toast.show({ type: 'success', text1: `${user.email} removido.` });
-    } catch (err) {
-      Toast.show({ type: 'error', text1: 'Erro ao remover usuário', text2: extractApiError(err) });
-    }
+  function handleDelete(user: AdminUser) {
+    Alert.alert(
+      'Remover usuário',
+      `Tem certeza que deseja remover ${user.full_name || user.email}? Esta ação não pode ser desfeita.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/api/admin-panel/users/${user.id}/`);
+              setUsers((prev) => prev.filter((u) => u.id !== user.id));
+              Toast.show({ type: 'success', text1: `${user.email} removido.` });
+            } catch (err) {
+              Toast.show({ type: 'error', text1: 'Erro ao remover usuário', text2: extractApiError(err) });
+            }
+          },
+        },
+      ],
+    );
   }
 
   function onSaved(updated: AdminUser) {
