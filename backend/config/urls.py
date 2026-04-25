@@ -10,7 +10,15 @@ from drf_spectacular.views import (
 
 
 def health_check(request):
-    return JsonResponse({'status': 'ok', 'service': 'tournament-hub-api'})
+    """Health check that validates DB connectivity for Railway load-balancer probes."""
+    from django.db import connection, OperationalError
+    try:
+        connection.ensure_connection()
+        db_ok = True
+    except OperationalError:
+        db_ok = False
+    payload = {'status': 'ok' if db_ok else 'degraded', 'db': 'ok' if db_ok else 'error'}
+    return JsonResponse(payload, status=200 if db_ok else 503)
 
 
 def root_view(request):

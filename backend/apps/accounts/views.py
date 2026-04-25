@@ -125,7 +125,7 @@ class MeView(generics.RetrieveUpdateAPIView):
 
 
 _ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP', 'GIF'}
-_MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
+_MAX_AVATAR_BYTES = 1 * 1024 * 1024  # 1 MB — reduced to control Cloudinary bandwidth
 
 
 @api_view(['POST'])
@@ -142,7 +142,7 @@ def upload_avatar(request):
         return Response({'detail': 'Nenhuma imagem enviada.'}, status=status.HTTP_400_BAD_REQUEST)
 
     if file.size > _MAX_AVATAR_BYTES:
-        return Response({'detail': 'Imagem deve ter no máximo 5MB.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': 'Imagem deve ter no máximo 1MB.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Reject SVG by content_type before reading bytes (fast path)
     if file.content_type in ('image/svg+xml', 'image/svg', 'text/xml', 'text/html'):

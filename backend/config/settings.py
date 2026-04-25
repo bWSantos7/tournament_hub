@@ -4,16 +4,29 @@ Production-ready configuration with security best practices.
 """
 from pathlib import Path
 from datetime import timedelta
-from decouple import config, Csv
+from django.core.exceptions import ImproperlyConfigured
+from decouple import config, Csv, UndefinedValueError
 import dj_database_url
 import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Security
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-only-change-this')
+
+def _require(key: str) -> str:
+    """Return env var value or raise ImproperlyConfigured — never falls back to an insecure default."""
+    try:
+        return config(key)
+    except UndefinedValueError:
+        raise ImproperlyConfigured(
+            f"Required environment variable '{key}' is not set. "
+            f"Add it to your .env file or Railway service variables."
+        )
+
+
+# Security — no insecure defaults for critical keys
+SECRET_KEY = _require('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*', cast=Csv())
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
     default='http://localhost:5173',
@@ -96,12 +109,22 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
 
-# Database
+# Database — PostgreSQL only; SQLite is never allowed in any environment
+_DATABASE_URL = config('DATABASE_URL', default=None)
+if not _DATABASE_URL:
+    raise ImproperlyConfigured(
+        "DATABASE_URL is required and must point to a PostgreSQL database. "
+        "Example: postgresql://user:password@host:5432/dbname"
+    )
+if _DATABASE_URL.startswith('sqlite'):
+    raise ImproperlyConfigured(
+        "SQLite is not supported. Set DATABASE_URL to a PostgreSQL connection string."
+    )
 DATABASES = {
     'default': dj_database_url.parse(
-        config('DATABASE_URL', default='sqlite:////tmp/build.db'),
+        _DATABASE_URL,
         conn_max_age=600,
-        ssl_require=False,
+        ssl_require=not DEBUG,
     )
 }
 
@@ -136,21 +159,20 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS
+# CORS — specific origins only; no wildcards in production
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173',
+    default='http://localhost:5173,http://localhost:3000',
     cast=Csv()
 )
 CORS_ALLOW_CREDENTIALS = True
+# Regex patterns restricted to known dev ports and trusted deployment domains only.
+# IP-range patterns are intentionally removed — they allowed CORS from any LAN machine.
 CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^http://localhost:\d+$",
-    r"^http://127\.0\.0\.1:\d+$",
-    r"^http://192\.168\.\d{1,3}\.\d{1,3}:\d+$",
-    r"^http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$",
-    r"^http://172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}:\d+$",
-    r"^https://.*\.railway\.app$",
-    r"^https://.*\.vercel\.app$",
+    r"^http://localhost:(3000|5173|8081|19000|19006)$",
+    r"^http://127\.0\.0\.1:(3000|5173|8081|19000|19006)$",
+    r"^https://[\w-]+\.railway\.app$",
+    r"^https://[\w-]+\.tournamenthub\.app$",
 ]
 
 # REST Framework
@@ -177,6 +199,7 @@ REST_FRAMEWORK = {
         'user': '300/minute',
         'heavy_user': '30/minute',
         'heavy_anon': '10/minute',
+        'token_refresh': '20/hour',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
@@ -299,7 +322,12 @@ MEDIA_ROOT = BASE_DIR / 'media'
 if CLOUDINARY_URL:
     # Expose to env so the cloudinary SDK and django-cloudinary-storage both pick it up
     os.environ['CLOUDINARY_URL'] = CLOUDINARY_URL
-    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+    # Use custom storage class that injects f_auto,q_auto into every served URL
+    # to enable automatic WebP conversion and lossy compression on Cloudinary CDN.
+    DEFAULT_FILE_STORAGE = 'apps.core.cloudinary_storage.OptimizedCloudinaryStorage'
+    CLOUDINARY_STORAGE = {
+        'TRANSFORMATION': [{'quality': 'auto', 'fetch_format': 'auto'}],
+    }
 
 # DRF Spectacular
 SPECTACULAR_SETTINGS = {
@@ -357,15 +385,27 @@ LOGGING = {
     },
 }
 
-# Sentry
+# Sentry — set SENTRY_DSN in Railway vars to enable error monitoring
 SENTRY_DSN = config('SENTRY_DSN', default='')
+SENTRY_ENVIRONMENT = config('SENTRY_ENVIRONMENT', default='production' if not DEBUG else 'development')
+SENTRY_RELEASE = config('SENTRY_RELEASE', default='')
+
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+    import logging as _logging
     sentry_sdk.init(
         dsn=SENTRY_DSN,
-        integrations=[DjangoIntegration(), CeleryIntegration()],
-        traces_sample_rate=0.1,
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE or None,
+        integrations=[
+            DjangoIntegration(transaction_style='url'),
+            CeleryIntegration(),
+            LoggingIntegration(level=_logging.INFO, event_level=_logging.ERROR),
+        ],
+        traces_sample_rate=config('SENTRY_TRACES_SAMPLE_RATE', default=0.05, cast=float),
         send_default_pii=False,
+        attach_stacktrace=True,
     )

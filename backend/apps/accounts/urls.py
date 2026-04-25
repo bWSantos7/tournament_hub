@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView,
@@ -17,6 +18,12 @@ from .views import (
     CoachAthleteViewSet,
 )
 
+class ThrottledTokenRefreshView(TokenRefreshView):
+    """Wraps simplejwt's TokenRefreshView with a scoped rate limit (20/hour)."""
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'token_refresh'
+
+
 router = DefaultRouter()
 router.register('coach/athletes', CoachAthleteViewSet, basename='coach-athlete')
 
@@ -24,7 +31,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('register/', RegisterView.as_view(), name='register'),
     path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('token/refresh/', ThrottledTokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', logout, name='logout'),
     path('me/', MeView.as_view(), name='me'),
     path('me/avatar/', upload_avatar, name='upload_avatar'),

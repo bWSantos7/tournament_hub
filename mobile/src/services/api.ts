@@ -6,9 +6,15 @@ export const REFRESH_KEY = 'th_refresh';
 export const USER_KEY = 'th_user';
 
 function resolveBaseUrl(): string {
-  const configured = process.env.EXPO_PUBLIC_API_BASE_URL || '';
+  const configured = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
   if (configured) return configured;
-  return 'http://localhost:8000';
+  // In development builds it's acceptable to fall back to the local emulator.
+  // In preview/production builds this variable MUST be set via eas.json → env.
+  if (__DEV__) return 'http://localhost:8000';
+  throw new Error(
+    'EXPO_PUBLIC_API_BASE_URL is not set. ' +
+    'Add it to eas.json under the correct build profile env section.',
+  );
 }
 
 export const BASE_URL = resolveBaseUrl();
