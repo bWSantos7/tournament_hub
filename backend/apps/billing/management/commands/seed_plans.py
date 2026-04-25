@@ -44,8 +44,8 @@ PLANS = [
     {
         'name': 'Pro',
         'slug': 'pro',
-        'price_monthly': '29.90',
-        'price_yearly': '287.00',
+        'price_monthly': '0.50',
+        'price_yearly': '5.00',
         'description': 'Para atletas competitivos que querem evoluir.',
         'highlight_label': 'Mais popular',
         'display_order': 1,
@@ -63,8 +63,8 @@ PLANS = [
     {
         'name': 'Elite',
         'slug': 'elite',
-        'price_monthly': '59.90',
-        'price_yearly': '575.00',
+        'price_monthly': '1.00',
+        'price_yearly': '10.00',
         'description': 'Tudo que o Pro oferece, mais ferramentas exclusivas.',
         'highlight_label': 'Completo',
         'display_order': 2,

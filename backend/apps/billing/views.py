@@ -99,28 +99,46 @@ def subscription_checkout(request):
 
         # Paid plan — attempt Asaas integration
         asaas_result = None
+        pix_qr = None
         try:
-            from .services.asaas_service import create_subscription, AsaasNotConfiguredError
+            from .services.asaas_service import (
+                create_subscription, get_subscription_first_pix_qr, AsaasNotConfiguredError,
+            )
             payment_method_map = {
                 'credit_card': 'CREDIT_CARD',
                 'pix': 'PIX',
                 'boleto': 'BOLETO',
                 'debit_card': 'DEBIT_CARD',
             }
+            card_data = None
+            if d['payment_method'] == 'credit_card' and d.get('card_number'):
+                card_data = {
+                    'holder_name':  d.get('card_holder_name', ''),
+                    'number':       d.get('card_number', ''),
+                    'expiry_month': d.get('card_expiry_month', ''),
+                    'expiry_year':  d.get('card_expiry_year', ''),
+                    'ccv':          d.get('card_ccv', ''),
+                    'cpf':          d.get('card_cpf', ''),
+                    'postal_code':  d.get('card_postal_code', ''),
+                }
             asaas_result = create_subscription(
                 user=request.user,
                 plan=plan,
                 billing_period=d['billing_period'],
                 payment_method=payment_method_map[d['payment_method']],
                 card_token=d.get('card_token', ''),
+                card_data=card_data,
             )
             sub.asaas_subscription_id = asaas_result.get('id', '')
             sub.status = Subscription.STATUS_PENDING
             sub.save(update_fields=['asaas_subscription_id', 'status', 'updated_at'])
             logger.info('Asaas subscription %s created for user %s', sub.asaas_subscription_id, request.user.id)
 
+            # For Pix: fetch QR code from first pending payment
+            if d['payment_method'] == 'pix' and sub.asaas_subscription_id:
+                pix_qr = get_subscription_first_pix_qr(sub.asaas_subscription_id)
+
         except Exception as exc:  # AsaasNotConfiguredError or network error
-            # Gateway not yet connected — persist locally for when it's activated
             logger.warning('Asaas not available (%s); subscription created locally.', exc)
             sub.status = Subscription.STATUS_PENDING
 
@@ -128,7 +146,13 @@ def subscription_checkout(request):
 
     resp_data = SubscriptionSerializer(sub).data
     if asaas_result:
-        resp_data['asaas'] = asaas_result  # expose payment links to client
+        resp_data['asaas'] = asaas_result
+    if pix_qr:
+        resp_data['pix'] = {
+            'qr_code_image': pix_qr.get('encodedImage', ''),
+            'copia_e_cola':  pix_qr.get('payload', ''),
+            'expiration':    pix_qr.get('expirationDate', ''),
+        }
     return Response(resp_data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 

@@ -1,0 +1,162 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { MainStackParamList } from '../../navigation/types';
+import { fetchSubscription } from '../../services/billing';
+
+type PixRoute = RouteProp<MainStackParamList, 'PixPayment'>;
+type Nav = NativeStackNavigationProp<MainStackParamList>;
+
+const POLL_INTERVAL = 5000;
+
+export function PixPaymentScreen() {
+  const navigation = useNavigation<Nav>();
+  const route = useRoute<PixRoute>();
+  const { pixData } = route.params;
+
+  const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    pollRef.current = setInterval(async () => {
+      try {
+        const sub = await fetchSubscription();
+        if (sub.status === 'active') {
+          clearInterval(pollRef.current!);
+          Alert.alert('Pagamento confirmado!', 'Sua assinatura está ativa.', [
+            { text: 'OK', onPress: () => navigation.replace('Subscription') },
+          ]);
+        }
+      } catch {
+        // ignore poll errors
+      }
+    }, POLL_INTERVAL);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  async function handleCopy() {
+    await Share.share({ message: pixData.copia_e_cola });
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  }
+
+  async function handleCheckManually() {
+    setChecking(true);
+    try {
+      const sub = await fetchSubscription();
+      if (sub.status === 'active') {
+        navigation.replace('Subscription');
+      } else {
+        Alert.alert('Pagamento pendente', 'Ainda não identificamos seu pagamento. Aguarde alguns instantes.');
+      }
+    } catch {
+      Alert.alert('Erro', 'Não foi possível verificar o pagamento.');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.title}>Pague com Pix</Text>
+      <Text style={styles.subtitle}>
+        Escaneie o QR code ou copie o código abaixo no seu banco.
+        A confirmação é automática em até 1 minuto.
+      </Text>
+
+      {pixData.qr_code_image ? (
+        <View style={styles.qrContainer}>
+          <Image
+            source={{ uri: `data:image/png;base64,${pixData.qr_code_image}` }}
+            style={styles.qrImage}
+            resizeMode="contain"
+          />
+        </View>
+      ) : (
+        <View style={styles.qrPlaceholder}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.qrPlaceholderText}>Gerando QR code...</Text>
+        </View>
+      )}
+
+      {pixData.copia_e_cola ? (
+        <View style={styles.copiaContainer}>
+          <Text style={styles.copiaLabel}>Pix Copia e Cola</Text>
+          <Text style={styles.copiaCode} numberOfLines={3} ellipsizeMode="middle">
+            {pixData.copia_e_cola}
+          </Text>
+          <TouchableOpacity style={styles.copyBtn} onPress={handleCopy}>
+            <Text style={styles.copyBtnText}>{copied ? '✓ Copiado!' : 'Copiar código'}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {pixData.expiration ? (
+        <Text style={styles.expiration}>
+          Válido até: {new Date(pixData.expiration).toLocaleString('pt-BR')}
+        </Text>
+      ) : null}
+
+      <View style={styles.pollInfo}>
+        <ActivityIndicator size="small" color="#6366F1" style={{ marginRight: 8 }} />
+        <Text style={styles.pollText}>Verificando pagamento automaticamente...</Text>
+      </View>
+
+      <TouchableOpacity style={styles.checkBtn} onPress={handleCheckManually} disabled={checking}>
+        {checking ? (
+          <ActivityIndicator color="#6366F1" />
+        ) : (
+          <Text style={styles.checkBtnText}>Já paguei — verificar agora</Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.cancelLink} onPress={() => navigation.navigate('Subscription')}>
+        <Text style={styles.cancelLinkText}>Pagar depois</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  content:   { padding: 24, paddingBottom: 40, alignItems: 'center' },
+
+  title:    { fontSize: 22, fontWeight: '700', color: '#1F2937', marginBottom: 8, textAlign: 'center' },
+  subtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+
+  qrContainer:      { backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  qrImage:          { width: 220, height: 220 },
+  qrPlaceholder:    { width: 220, height: 220, justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  qrPlaceholderText:{ marginTop: 12, color: '#9CA3AF', fontSize: 14 },
+
+  copiaContainer: { width: '100%', backgroundColor: '#FFF', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E7EB' },
+  copiaLabel:     { fontSize: 12, fontWeight: '600', color: '#6B7280', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  copiaCode:      { fontSize: 12, color: '#374151', fontFamily: 'monospace', marginBottom: 12, lineHeight: 18 },
+  copyBtn:        { backgroundColor: '#EEF2FF', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  copyBtnText:    { color: '#6366F1', fontWeight: '600', fontSize: 14 },
+
+  expiration: { fontSize: 12, color: '#9CA3AF', marginBottom: 24 },
+
+  pollInfo: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  pollText: { fontSize: 13, color: '#6B7280' },
+
+  checkBtn:     { width: '100%', backgroundColor: '#6366F1', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 12 },
+  checkBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
+  cancelLink:   { paddingVertical: 8 },
+  cancelLinkText:{ color: '#9CA3AF', fontSize: 14 },
+});

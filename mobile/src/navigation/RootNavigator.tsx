@@ -14,6 +14,7 @@ import { MyRegistrationsScreen } from '../screens/app/MyRegistrationsScreen';
 import { RegistrationListScreen } from '../screens/app/RegistrationListScreen';
 import { PlansScreen } from '../screens/app/PlansScreen';
 import { CheckoutScreen } from '../screens/app/CheckoutScreen';
+import { PixPaymentScreen } from '../screens/app/PixPaymentScreen';
 import { SubscriptionScreen } from '../screens/app/SubscriptionScreen';
 import { TournamentCompareScreen } from '../screens/app/TournamentCompareScreen';
 
@@ -51,6 +52,11 @@ export function RootNavigator() {
         name="Checkout"
         component={CheckoutScreen}
         options={{ headerShown: true, title: 'Finalizar assinatura', headerBackTitle: 'Voltar' }}
+      />
+      <MainStack.Screen
+        name="PixPayment"
+        component={PixPaymentScreen}
+        options={{ headerShown: true, title: 'Pagamento Pix', headerBackTitle: 'Voltar' }}
       />
       <MainStack.Screen
         name="Subscription"

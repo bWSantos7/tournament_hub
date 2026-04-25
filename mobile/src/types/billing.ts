@@ -65,4 +65,22 @@ export interface CheckoutPayload {
   billing_period: 'monthly' | 'yearly';
   payment_method: BillingPaymentMethod;
   card_token?: string;
+  card_holder_name?: string;
+  card_number?: string;
+  card_expiry_month?: string;
+  card_expiry_year?: string;
+  card_ccv?: string;
+  card_cpf?: string;
+  card_postal_code?: string;
+}
+
+export interface PixPaymentData {
+  qr_code_image: string;
+  copia_e_cola: string;
+  expiration: string;
+}
+
+export interface CheckoutResponse extends Subscription {
+  asaas?: Record<string, unknown>;
+  pix?: PixPaymentData;
 }

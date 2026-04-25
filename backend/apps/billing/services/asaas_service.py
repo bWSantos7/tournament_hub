@@ -130,7 +130,14 @@ def get_or_create_customer(user) -> str:
 
 # ── Subscriptions ──────────────────────────────────────────────────────────────
 
-def create_subscription(user, plan, billing_period: str, payment_method: str, card_token: str = '') -> dict:
+def create_subscription(
+    user,
+    plan,
+    billing_period: str,
+    payment_method: str,
+    card_token: str = '',
+    card_data: Optional[dict] = None,
+) -> dict:
     """
     Create an Asaas subscription (recorrência).
     https://docs.asaas.com/reference/criar-assinatura-com-cartao-de-credito
@@ -140,7 +147,8 @@ def create_subscription(user, plan, billing_period: str, payment_method: str, ca
         plan: billing.Plan instance
         billing_period: 'monthly' or 'yearly'
         payment_method: 'CREDIT_CARD' | 'PIX' | 'BOLETO'
-        card_token: tokenized card (required for CREDIT_CARD)
+        card_token: tokenized card (optional)
+        card_data: raw card fields dict (for direct card submission)
 
     Returns Asaas subscription response dict.
     """
@@ -155,14 +163,54 @@ def create_subscription(user, plan, billing_period: str, payment_method: str, ca
         'value': price,
         'nextDueDate': date.today().isoformat(),
         'cycle': cycle,
-        'description': f'Tournament Hub — Plano {plan.name}',
+        'description': f'Tennis Hub — Plano {plan.name}',
         'externalReference': str(user.id),
     }
-    if payment_method.upper() == 'CREDIT_CARD' and card_token:
-        payload['creditCardToken'] = card_token
+    if payment_method.upper() == 'CREDIT_CARD':
+        if card_token:
+            payload['creditCardToken'] = card_token
+        elif card_data:
+            payload['creditCard'] = {
+                'holderName': card_data.get('holder_name', ''),
+                'number': card_data.get('number', '').replace(' ', ''),
+                'expiryMonth': card_data.get('expiry_month', ''),
+                'expiryYear': card_data.get('expiry_year', ''),
+                'ccv': card_data.get('ccv', ''),
+            }
+            payload['creditCardHolderInfo'] = {
+                'name': card_data.get('holder_name', ''),
+                'email': user.email,
+                'cpfCnpj': card_data.get('cpf', '').replace('.', '').replace('-', ''),
+                'postalCode': card_data.get('postal_code', '').replace('-', ''),
+                'addressNumber': '0',
+                'phone': getattr(user, 'phone', '') or '',
+            }
 
     logger.info('Creating Asaas subscription for user %s plan %s', user.id, plan.slug)
     return _request('POST', '/subscriptions', json=payload)
+
+
+def get_subscription_first_pix_qr(asaas_subscription_id: str) -> dict:
+    """
+    Fetch the Pix QR code for the first pending payment of a subscription.
+    Returns dict with encodedImage, payload (copia e cola) and expirationDate.
+    """
+    try:
+        payments = _request('GET', '/payments', params={
+            'subscription': asaas_subscription_id,
+            'limit': 1,
+            'offset': 0,
+        })
+        payment_list = payments.get('data', [])
+        if not payment_list:
+            logger.warning('No payments found for subscription %s', asaas_subscription_id)
+            return {}
+        payment_id = payment_list[0]['id']
+        qr = _request('GET', f'/payments/{payment_id}/pixQrCode')
+        return qr
+    except AsaasAPIError as exc:
+        logger.warning('Could not fetch Pix QR for subscription %s: %s', asaas_subscription_id, exc)
+        return {}
 
 
 def cancel_subscription(asaas_subscription_id: str) -> dict:

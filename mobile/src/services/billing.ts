@@ -6,7 +6,9 @@ export type {
   Payment,
   FeatureAccess,
   CheckoutPayload,
+  CheckoutResponse,
   BillingPaymentMethod,
+  PixPaymentData,
 } from '../types/billing';
 
 export async function fetchPlans(): Promise<Plan[]> {
@@ -19,7 +21,7 @@ export async function fetchSubscription(): Promise<Subscription> {
   return res.data;
 }
 
-export async function checkout(payload: CheckoutPayload): Promise<Subscription & { asaas?: Record<string, unknown> }> {
+export async function checkout(payload: CheckoutPayload): Promise<CheckoutResponse> {
   const res = await api.post('/api/billing/subscription/checkout/', payload);
   return res.data;
 }
