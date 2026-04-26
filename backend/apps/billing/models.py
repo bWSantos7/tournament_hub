@@ -129,6 +129,8 @@ class Subscription(TimestampedModel):
         indexes = [
             models.Index(fields=['status']),
             models.Index(fields=['next_due_date']),
+            models.Index(fields=['asaas_subscription_id']),
+            models.Index(fields=['user', '-created_at']),
         ]
 
     def __str__(self):
@@ -216,7 +218,7 @@ class WebhookEvent(TimestampedModel):
     asaas_id    = models.CharField(max_length=60, blank=True, db_index=True)
     payload     = models.JSONField(default=dict)
     processed   = models.BooleanField(default=False)
-    error       = models.CharField(max_length=300, blank=True)
+    error       = models.TextField(blank=True)  # TextField: no char limit for full tracebacks
 
     class Meta:
         ordering = ['-created_at']

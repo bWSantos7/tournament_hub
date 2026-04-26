@@ -235,6 +235,8 @@ export function CheckoutScreen() {
                 keyboardType="numeric"
                 maxLength={4}
                 secureTextEntry
+                contextMenuHidden={true}
+                selectTextOnFocus={false}
               />
             </View>
 

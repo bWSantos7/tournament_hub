@@ -1,13 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import api, { REFRESH_KEY, TOKEN_KEY, USER_KEY } from './api';
+import api, { REFRESH_KEY, TOKEN_KEY, USER_KEY, storage } from './api';
 import { LoginResponse, User } from '../types';
 
 async function persistAuth(data: LoginResponse) {
-  await AsyncStorage.multiSet([
-    [TOKEN_KEY, data.access],
-    [REFRESH_KEY, data.refresh],
-    [USER_KEY, JSON.stringify(data.user)],
-  ]);
+  await storage.set(TOKEN_KEY, data.access);
+  await storage.set(REFRESH_KEY, data.refresh);
+  await storage.set(USER_KEY, JSON.stringify(data.user));
 }
 
 export async function login(email: string, password: string): Promise<LoginResponse> {
@@ -33,23 +30,23 @@ export async function register(payload: {
 
 export async function fetchMe(): Promise<User> {
   const res = await api.get<User>('/api/auth/me/');
-  await AsyncStorage.setItem(USER_KEY, JSON.stringify(res.data));
+  await storage.set(USER_KEY, JSON.stringify(res.data));
   return res.data;
 }
 
 export async function logout() {
-  const refresh = await AsyncStorage.getItem(REFRESH_KEY);
+  const refresh = await storage.get(REFRESH_KEY);
   try {
     if (refresh) await api.post('/api/auth/logout/', { refresh });
   } catch {
   } finally {
-    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
+    await storage.deleteMultiple([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
   }
 }
 
 export async function deleteAccount() {
   await api.delete('/api/auth/delete-account/');
-  await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
+  await storage.deleteMultiple([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
 }
 
 export async function sendEmailOtp() { await api.post('/api/auth/send-email-otp/'); }
@@ -59,12 +56,12 @@ export async function uploadAvatar(asset: { uri: string; fileName?: string | nul
   const form = new FormData();
   form.append('avatar', { uri: asset.uri, name: asset.fileName || 'avatar.jpg', type: asset.mimeType || 'image/jpeg' } as any);
   const res = await api.post<User>('/api/auth/me/avatar/', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-  await AsyncStorage.setItem(USER_KEY, JSON.stringify(res.data));
+  await storage.set(USER_KEY, JSON.stringify(res.data));
   return res.data;
 }
 
 export async function loadStoredUser(): Promise<User | null> {
-  const raw = await AsyncStorage.getItem(USER_KEY);
+  const raw = await storage.get(USER_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw) as User; } catch { return null; }
 }

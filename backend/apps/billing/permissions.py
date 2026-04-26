@@ -16,12 +16,25 @@ Usage in views:
 import functools
 import logging
 
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.response import Response
 
 from .models import Feature, Subscription
 
 logger = logging.getLogger('apps.billing')
+
+_FEATURE_CACHE_TTL = 300   # 5 minutes — short enough to reflect plan changes quickly
+_FREE_PLAN_CACHE_TTL = 3600  # free plan features rarely change
+
+
+def _user_features_cache_key(user_id: int) -> str:
+    return f'billing:features:{user_id}'
+
+
+def _invalidate_user_features_cache(user_id: int):
+    """Call this whenever a user's subscription changes."""
+    cache.delete(_user_features_cache_key(user_id))
 
 
 def get_user_subscription(user) -> 'Subscription | None':
@@ -32,36 +45,56 @@ def get_user_subscription(user) -> 'Subscription | None':
         return None
 
 
+def _get_plan_feature_codes(plan) -> set:
+    """Return the set of feature codes for a plan (cached per plan slug)."""
+    cache_key = f'billing:plan_features:{plan.slug}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    codes = set(plan.plan_features.values_list('feature__code', flat=True))
+    cache.set(cache_key, codes, _FREE_PLAN_CACHE_TTL)
+    return codes
+
+
+def _get_user_active_feature_codes(user) -> set:
+    """
+    Return the set of feature codes available to this user.
+    Result is cached per user for _FEATURE_CACHE_TTL seconds.
+    """
+    cache_key = _user_features_cache_key(user.id)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    sub = get_user_subscription(user)
+    if sub is None or not sub.is_active:
+        from .models import Plan
+        try:
+            free_plan = Plan.objects.prefetch_related('plan_features__feature').get(slug=Plan.SLUG_FREE)
+            codes = _get_plan_feature_codes(free_plan)
+        except Plan.DoesNotExist:
+            codes = set()
+    else:
+        codes = set(
+            sub.plan.plan_features.values_list('feature__code', flat=True)
+        )
+
+    cache.set(cache_key, codes, _FEATURE_CACHE_TTL)
+    return codes
+
+
 def user_has_feature(user, feature_code: str) -> bool:
     """
     Return True if the user's current subscription includes the feature.
-    Free-tier users (no subscription) only have features included in the Free plan.
+    Result is cached per user for 5 minutes.
     """
-    sub = get_user_subscription(user)
-    if sub is None:
-        # Assign the free plan implicitly
-        from .models import Plan
-        try:
-            free_plan = Plan.objects.get(slug=Plan.SLUG_FREE)
-            return free_plan.plan_features.filter(feature__code=feature_code).exists()
-        except Plan.DoesNotExist:
-            return False
-
-    if not sub.is_active:
-        # Downgraded / expired → fall back to free-plan features
-        from .models import Plan
-        try:
-            free_plan = Plan.objects.get(slug=Plan.SLUG_FREE)
-            return free_plan.plan_features.filter(feature__code=feature_code).exists()
-        except Plan.DoesNotExist:
-            return False
-
-    return sub.has_feature(feature_code)
+    return feature_code in _get_user_active_feature_codes(user)
 
 
 def user_feature_limit(user, feature_code: str):
     """
     Return usage limit for a feature (None = unlimited, 0 = no access).
+    Not cached individually — used rarely compared to user_has_feature.
     """
     sub = get_user_subscription(user)
     if sub is None or not sub.is_active:
@@ -69,9 +102,7 @@ def user_feature_limit(user, feature_code: str):
         try:
             free_plan = Plan.objects.get(slug=Plan.SLUG_FREE)
             pf = free_plan.plan_features.filter(feature__code=feature_code).first()
-            if pf is None:
-                return 0
-            return pf.limit
+            return pf.limit if pf else 0
         except Plan.DoesNotExist:
             return 0
 
@@ -82,12 +113,6 @@ def requires_feature(feature_code: str):
     """
     Decorator for DRF api_view functions.
     Returns HTTP 403 with upgrade prompt if feature is not available.
-
-    Usage:
-        @api_view(['GET'])
-        @requires_feature('advanced_stats')
-        def my_view(request):
-            ...
     """
     def decorator(view_func):
         @functools.wraps(view_func)

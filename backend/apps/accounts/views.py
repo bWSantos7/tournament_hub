@@ -4,7 +4,6 @@ import logging
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -48,27 +47,11 @@ class RegisterView(generics.CreateAPIView):
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
 
-        # Send email OTP automatically after registration
+        # Send email OTP via Celery task (auto-retries on failure)
         from .otp import generate_and_store
-        from django.core.mail import send_mail as _send_mail
-        import sys
+        from .tasks import send_otp_email
         code = generate_and_store(user.id, 'email')
-        try:
-            _send_mail(
-                subject='[Tournament Hub] Verifique seu e-mail',
-                message=(
-                    f'Olá {user.full_name or user.email}!\n\n'
-                    f'Seu código de verificação de e-mail é:\n\n'
-                    f'  {code}\n\n'
-                    f'Válido por 10 minutos. Não compartilhe com ninguém.'
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-        except Exception as exc:
-            print(f'[OTP] Email send failed for {user.email}: {exc}', file=sys.stderr, flush=True)
-            logger.error('OTP email failed for user %s: %s', user.id, exc)
+        send_otp_email.delay(user.id, user.email, user.full_name or '', code, 'verify')
 
         return Response({
             'user': UserSerializer(user, context={'request': request}).data,
@@ -203,13 +186,53 @@ def logout(request):
 @api_view(['DELETE'])
 @permission_classes([permissions.IsAuthenticated])
 def delete_account(request):
-    """LGPD: permite exclusão de conta do próprio usuário."""
+    """
+    LGPD Art. 18: anonimização real — remove todos os dados pessoais identificáveis.
+    Registros financeiros e de auditoria são mantidos com referência anonimizada.
+    """
+    import secrets as _secrets
+    from django.db import transaction as _tx
+
     user = request.user
-    user.is_active = False
-    user.email = f'deleted-{user.id}@example.invalid'
-    user.full_name = ''
-    user.save()
-    return Response({'detail': 'Conta removida.'}, status=status.HTTP_204_NO_CONTENT)
+    anon_token = _secrets.token_hex(16)
+
+    with _tx.atomic():
+        # Invalidate all JWT tokens
+        try:
+            from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+            OutstandingToken.objects.filter(user=user).update(token='')
+        except Exception:
+            pass
+
+        # Anonymize the user record — keep row for FK integrity in payments/audit
+        user.email = f'deleted-{anon_token}@anon.invalid'
+        user.full_name = '[Removido]'
+        user.phone = ''
+        user.avatar = None
+        user.is_active = False
+        user.set_unusable_password()
+        user.save(update_fields=[
+            'email', 'full_name', 'phone', 'avatar',
+            'is_active', 'password',
+        ])
+
+        # Remove player profiles (personal data)
+        try:
+            from apps.players.models import PlayerProfile
+            PlayerProfile.objects.filter(user=user).delete()
+        except Exception:
+            pass
+
+        # Remove push subscriptions
+        try:
+            from apps.alerts.models import PushSubscription
+            PushSubscription.objects.filter(user=user).delete()
+        except Exception:
+            pass
+
+        logger.info('Account anonymized for user_id=%s (LGPD)', user.id)
+
+    return Response({'detail': 'Conta removida com sucesso.'}, status=status.HTTP_204_NO_CONTENT)
 
 
 class OtpThrottle(AnonRateThrottle):
@@ -220,27 +243,12 @@ class OtpThrottle(AnonRateThrottle):
 @permission_classes([permissions.IsAuthenticated])
 @throttle_classes([OtpThrottle])
 def send_email_otp(request):
-    """Send 6-digit OTP to the authenticated user's email."""
+    """Send 6-digit OTP to the authenticated user's email via Celery (auto-retries)."""
     from .otp import generate_and_store
-    from django.core.mail import send_mail as _send_mail
-    import sys
+    from .tasks import send_otp_email
     user = request.user
     code = generate_and_store(user.id, 'email')
-    try:
-        _send_mail(
-            subject='[Tournament Hub] Código de verificação de e-mail',
-            message=(
-                f'Seu código de verificação é:\n\n  {code}\n\n'
-                f'Válido por 10 minutos. Não compartilhe com ninguém.'
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
-    except Exception as exc:
-        print(f'[OTP] Resend failed for {user.email}: {exc}', file=sys.stderr, flush=True)
-        logger.error('OTP resend failed for user %s: %s', user.id, exc)
-        return Response({'detail': f'Não foi possível enviar o código. Tente novamente em instantes.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    send_otp_email.delay(user.id, user.email, user.full_name or '', code, 'resend')
     return Response({'detail': f'Código enviado para {user.email}.'})
 
 
@@ -284,25 +292,12 @@ def password_reset_request(request):
     frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
     reset_url = f'{frontend_url}/redefinir-senha/{uid}/{token}/'
 
-    # Always log the URL so it's visible in Railway logs even when SMTP is off
-    logger.info('Password reset link for %s: %s', email, reset_url)
+    # SECURITY: never log the full reset URL — token is a credential
+    logger.info('Password reset requested for user %s', user.id)
 
-    try:
-        send_mail(
-            subject='[Tennis Hub] Redefinição de senha',
-            message=(
-                f'Olá {user.full_name or user.email},\n\n'
-                f'Clique no link abaixo para redefinir sua senha (válido por 24h):\n\n'
-                f'{reset_url}\n\n'
-                f'Se não foi você, ignore este email.'
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
-        logger.info('Password reset email sent to %s', email)
-    except Exception:
-        logger.exception('Failed to send password reset email to %s — link: %s', email, reset_url)
+    # Dispatch via Celery for retry resilience — reset_url never logged
+    from .tasks import send_password_reset_email
+    send_password_reset_email.delay(user.id, user.email, user.full_name or '', reset_url)
 
     return Response({'detail': 'Se o email existir, enviaremos as instruções.'})
 

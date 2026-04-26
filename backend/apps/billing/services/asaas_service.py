@@ -39,34 +39,58 @@ def _is_configured() -> bool:
     return bool(getattr(settings, 'ASAAS_API_KEY', ''))
 
 
-def _request(method: str, path: str, **kwargs):
-    """Generic HTTP call to Asaas API with error handling."""
+def _request(method: str, path: str, _retries: int = 3, **kwargs):
+    """
+    Generic HTTP call to Asaas API with exponential backoff retry.
+    Retries on network errors and 5xx responses. Never retries 4xx (client errors).
+    """
+    import time as _time
+
     if not _is_configured():
         raise AsaasNotConfiguredError(
             'ASAAS_API_KEY not set. Configure the variable and set ASAAS_ENVIRONMENT=sandbox|production.'
         )
     url = f'{_base_url()}{path}'
-    try:
-        response = requests.request(
-            method,
-            url,
-            headers=_headers(),
-            timeout=30,
-            **kwargs,
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.HTTPError as exc:
-        body = {}
+
+    last_exc = None
+    for attempt in range(_retries):
         try:
-            body = exc.response.json()
-        except Exception:
-            pass
-        logger.error('Asaas HTTP error %s %s: %s', method, path, body)
-        raise AsaasAPIError(f'Asaas returned {exc.response.status_code}', body) from exc
-    except requests.RequestException as exc:
-        logger.exception('Asaas request failed: %s %s', method, path)
-        raise AsaasAPIError(str(exc)) from exc
+            response = requests.request(
+                method,
+                url,
+                headers=_headers(),
+                timeout=30,
+                **kwargs,
+            )
+            # 4xx = client error — don't retry
+            if 400 <= response.status_code < 500:
+                body = {}
+                try:
+                    body = response.json()
+                except Exception:
+                    pass
+                logger.error('Asaas client error %s %s → %s: %s', method, path, response.status_code, body)
+                raise AsaasAPIError(f'Asaas returned {response.status_code}', body)
+
+            response.raise_for_status()
+            return response.json()
+
+        except AsaasAPIError:
+            raise  # propagate 4xx immediately — no retry
+
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt < _retries - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                logger.warning(
+                    'Asaas request failed (attempt %d/%d), retrying in %ds: %s %s — %s',
+                    attempt + 1, _retries, wait, method, path, exc,
+                )
+                _time.sleep(wait)
+            else:
+                logger.exception('Asaas request failed after %d attempts: %s %s', _retries, method, path)
+
+    raise AsaasAPIError(str(last_exc)) from last_exc
 
 
 # ── Exceptions ─────────────────────────────────────────────────────────────────
@@ -286,16 +310,16 @@ def validate_webhook_token(token: str) -> bool:
     Asaas sends a token in the webhook header (asaas-webhook-token).
     Compare against ASAAS_WEBHOOK_TOKEN env var.
 
-    SECURITY: If ASAAS_WEBHOOK_TOKEN is not configured we REJECT the request.
-    Accepting unauthenticated webhooks would allow payload injection by anyone.
-    Configure the token before enabling Asaas integration.
+    SECURITY: Uses hmac.compare_digest to prevent timing side-channel attacks.
+    If ASAAS_WEBHOOK_TOKEN is not configured we REJECT all requests.
     """
+    import hmac as _hmac
     expected = getattr(settings, 'ASAAS_WEBHOOK_TOKEN', '')
     if not expected:
         logger.error(
-            'ASAAS_WEBHOOK_TOKEN is not configured. '
-            'All webhook requests will be rejected until the token is set. '
-            'Set ASAAS_WEBHOOK_TOKEN in your environment variables.'
+            'ASAAS_WEBHOOK_TOKEN is not configured — all webhook requests rejected. '
+            'Set ASAAS_WEBHOOK_TOKEN in Railway Variables.'
         )
-        return False  # reject — never accept unauthenticated webhooks
-    return token == expected
+        return False
+    # constant-time comparison prevents timing attacks
+    return _hmac.compare_digest(token.encode(), expected.encode())

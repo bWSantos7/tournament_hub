@@ -1,15 +1,46 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
-export const TOKEN_KEY = 'th_access';
+export const TOKEN_KEY   = 'th_access';
 export const REFRESH_KEY = 'th_refresh';
-export const USER_KEY = 'th_user';
+export const USER_KEY    = 'th_user';
+
+// SecureStore wrappers — uses Keychain (iOS) / EncryptedSharedPreferences (Android)
+// Falls back silently on web where SecureStore is unavailable.
+async function secureGet(key: string): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function secureSet(key: string, value: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch {
+    // no-op on unsupported platforms
+  }
+}
+
+async function secureDelete(key: string): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch {
+    // no-op
+  }
+}
+
+export const storage = {
+  get: secureGet,
+  set: secureSet,
+  delete: secureDelete,
+  deleteMultiple: (keys: string[]) => Promise.all(keys.map(secureDelete)),
+};
 
 function resolveBaseUrl(): string {
   const configured = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
   if (configured) return configured;
-  // In development builds it's acceptable to fall back to the local emulator.
-  // In preview/production builds this variable MUST be set via eas.json → env.
   if (__DEV__) return 'http://localhost:8000';
   throw new Error(
     'EXPO_PUBLIC_API_BASE_URL is not set. ' +
@@ -36,18 +67,18 @@ const api: AxiosInstance = axios.create({
 });
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-  const token = await AsyncStorage.getItem(TOKEN_KEY);
+  const token = await secureGet(TOKEN_KEY);
   if (token && config.headers) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 async function refreshToken() {
-  const refresh = await AsyncStorage.getItem(REFRESH_KEY);
+  const refresh = await secureGet(REFRESH_KEY);
   if (!refresh) throw new Error('no refresh token');
   const res = await axios.post(`${BASE_URL}/api/auth/token/refresh/`, { refresh });
   const newAccess = res.data.access;
-  await AsyncStorage.setItem(TOKEN_KEY, newAccess);
-  if (res.data.refresh) await AsyncStorage.setItem(REFRESH_KEY, res.data.refresh);
+  await secureSet(TOKEN_KEY, newAccess);
+  if (res.data.refresh) await secureSet(REFRESH_KEY, res.data.refresh);
   return newAccess;
 }
 
@@ -81,7 +112,7 @@ api.interceptors.response.use(
         return api(original);
       } catch (err) {
         pendingRequests = [];
-        await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
+        await storage.deleteMultiple([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
         return Promise.reject(err);
       } finally {
         isRefreshing = false;

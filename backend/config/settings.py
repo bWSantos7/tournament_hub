@@ -174,8 +174,10 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:(3000|5173|8081|19000|19006)$",
     r"^http://127\.0\.0\.1:(3000|5173|8081|19000|19006)$",
-    r"^https://[\w-]+\.railway\.app$",
-    r"^https://[\w-]+\.tournamenthub\.app$",
+    # Locked to the specific Railway subdomain — prevents other Railway tenants from matching
+    r"^https://tournamenthub-production\.up\.railway\.app$",
+    # Only known subdomains of tournamenthub.app
+    r"^https://(api|app|www)\.tournamenthub\.app$",
 ]
 
 # REST Framework
@@ -203,6 +205,7 @@ REST_FRAMEWORK = {
         'heavy_user': '30/minute',
         'heavy_anon': '10/minute',
         'token_refresh': '20/hour',
+        'webhook': '120/minute',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }

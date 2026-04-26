@@ -17,8 +17,25 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
+
+# PCI-DSS: fields that must never be persisted from Asaas payment responses
+_SENSITIVE_PAYMENT_FIELDS = frozenset({
+    'creditCard', 'card', 'cardNumber', 'holderName', 'expiryMonth',
+    'expiryYear', 'ccv', 'cvv', 'creditCardToken',
+})
+
+# Valid subscription status transitions (state machine) — uses string values directly
+_VALID_TRANSITIONS: dict[str, set] = {
+    'pending':  {'active', 'canceled', 'unpaid'},
+    'active':   {'unpaid', 'expired', 'canceled'},
+    'unpaid':   {'active', 'canceled'},
+    'expired':  {'active', 'canceled'},
+    'trial':    {'active', 'canceled', 'expired'},
+    'canceled': set(),  # terminal — no transitions out
+}
 
 from apps.audit.models import AuditLog
 from .models import Feature, Payment, Plan, Subscription, WebhookEvent
@@ -31,6 +48,11 @@ from .serializers import (
 )
 
 logger = logging.getLogger('apps.billing')
+
+
+class WebhookThrottle(AnonRateThrottle):
+    """Dedicated rate limit for the Asaas webhook endpoint."""
+    scope = 'webhook'
 
 
 # ── Plans (public) ─────────────────────────────────────────────────────────────
@@ -227,9 +249,16 @@ def payment_history(request):
 def my_features(request):
     """
     Return a map of all features with their access status and limit for the current user.
-    Useful for the mobile app to decide which UI elements to show/hide.
+    Cached per user — invalidated on subscription changes.
     """
-    from .permissions import user_has_feature, user_feature_limit
+    from django.core.cache import cache as _cache
+    from .permissions import user_has_feature, user_feature_limit, _user_features_cache_key
+
+    cache_key = f'my_features:{request.user.id}'
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
+
     features = Feature.objects.all()
     result = {}
     for f in features:
@@ -238,6 +267,7 @@ def my_features(request):
             'limit': user_feature_limit(request.user, f.code),
             'name': f.name,
         }
+    _cache.set(cache_key, result, 300)
     return Response(result)
 
 
@@ -245,18 +275,19 @@ def my_features(request):
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
+@throttle_classes([WebhookThrottle])
 def asaas_webhook(request):
     """
     Receive and process Asaas webhook events.
     https://docs.asaas.com/reference/webhook
 
-    Validates token, persists the raw event, then processes it.
+    Security: token validated via hmac.compare_digest, rate-limited,
+    processed inside transaction.atomic() for consistency.
     """
-    # Token validation
     token = request.META.get('HTTP_ASAAS_WEBHOOK_TOKEN', '')
     from .services.asaas_service import validate_webhook_token
     if not validate_webhook_token(token):
-        logger.warning('Invalid Asaas webhook token received')
+        logger.warning('Invalid Asaas webhook token — request rejected')
         return Response({'detail': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
 
     payload = request.data
@@ -264,7 +295,13 @@ def asaas_webhook(request):
     payment_data = payload.get('payment', {})
     asaas_id = payment_data.get('id', '') or payload.get('subscription', {}).get('id', '')
 
-    # Persist raw event for audit/replay
+    # Idempotency: skip already-processed events with the same asaas_id+event_type
+    if asaas_id and WebhookEvent.objects.filter(
+        asaas_id=asaas_id, event_type=event_type, processed=True
+    ).exists():
+        logger.info('Duplicate webhook skipped: %s %s', event_type, asaas_id)
+        return Response({'received': True})
+
     event = WebhookEvent.objects.create(
         event_type=event_type,
         asaas_id=asaas_id,
@@ -272,12 +309,13 @@ def asaas_webhook(request):
     )
 
     try:
-        _process_webhook_event(event_type, payload, event)
+        with transaction.atomic():
+            _process_webhook_event(event_type, payload, event)
         event.processed = True
         event.save(update_fields=['processed', 'updated_at'])
     except Exception as exc:
         logger.exception('Error processing webhook event %s', event_type)
-        event.error = str(exc)[:300]
+        event.error = str(exc)
         event.save(update_fields=['error', 'updated_at'])
 
     return Response({'received': True})
@@ -304,8 +342,33 @@ def _process_webhook_event(event_type: str, payload: dict, event: WebhookEvent):
         logger.info('Unhandled Asaas webhook event: %s', event_type)
 
 
+def _safe_raw_response(data: dict) -> dict:
+    """Strip PCI-sensitive fields before persisting payment response."""
+    return {k: v for k, v in data.items() if k not in _SENSITIVE_PAYMENT_FIELDS}
+
+
+def _transition_subscription(sub: Subscription, new_status: str, context: str = '') -> bool:
+    """
+    Apply a status transition only if it's valid per the state machine.
+    Returns True if transition was applied, False if rejected.
+    """
+    allowed = _VALID_TRANSITIONS.get(sub.status, set())
+    if new_status not in allowed:
+        logger.error(
+            'Invalid subscription transition %s → %s (sub_id=%s) context=%s',
+            sub.status, new_status, sub.id, context,
+        )
+        return False
+    return True
+
+
 def _find_subscription_by_asaas(asaas_subscription_id: str):
-    return Subscription.objects.filter(asaas_subscription_id=asaas_subscription_id).first()
+    return (
+        Subscription.objects
+        .select_related('user', 'plan')
+        .filter(asaas_subscription_id=asaas_subscription_id)
+        .first()
+    )
 
 
 def _handle_payment_confirmed(payload: dict):
@@ -313,7 +376,7 @@ def _handle_payment_confirmed(payload: dict):
     asaas_sub_id = p.get('subscription', '')
     sub = _find_subscription_by_asaas(asaas_sub_id) if asaas_sub_id else None
 
-    pay, _ = Payment.objects.update_or_create(
+    Payment.objects.update_or_create(
         asaas_payment_id=p.get('id', ''),
         defaults={
             'user': sub.user if sub else _user_from_external_ref(p.get('externalReference', '')),
@@ -324,11 +387,11 @@ def _handle_payment_confirmed(payload: dict):
             'transaction_id': p.get('id', ''),
             'paid_at': timezone.now(),
             'description': p.get('description', ''),
-            'raw_response': p,
+            'raw_response': _safe_raw_response(p),  # PCI: strip card data
         },
     )
-    if sub:
-        from datetime import date as date_cls, timedelta
+    if sub and _transition_subscription(sub, Subscription.STATUS_ACTIVE, 'payment_confirmed'):
+        from datetime import date as date_cls
         sub.status = Subscription.STATUS_ACTIVE
         sub.start_date = sub.start_date or date_cls.today()
         if sub.billing_period == 'yearly':
@@ -344,10 +407,9 @@ def _handle_payment_overdue(payload: dict):
     p = payload.get('payment', {})
     asaas_sub_id = p.get('subscription', '')
     sub = _find_subscription_by_asaas(asaas_sub_id) if asaas_sub_id else None
-    if sub:
+    if sub and _transition_subscription(sub, Subscription.STATUS_UNPAID, 'payment_overdue'):
         sub.status = Subscription.STATUS_UNPAID
         sub.save(update_fields=['status', 'updated_at'])
-
     Payment.objects.filter(asaas_payment_id=p.get('id', '')).update(status=Payment.STATUS_OVERDUE)
 
 
@@ -365,7 +427,7 @@ def _handle_payment_chargeback(payload: dict):
     p = payload.get('payment', {})
     asaas_sub_id = p.get('subscription', '')
     sub = _find_subscription_by_asaas(asaas_sub_id) if asaas_sub_id else None
-    if sub:
+    if sub and _transition_subscription(sub, Subscription.STATUS_UNPAID, 'chargeback'):
         sub.status = Subscription.STATUS_UNPAID
         sub.save(update_fields=['status', 'updated_at'])
     logger.warning('Chargeback dispute for payment %s', p.get('id'))
@@ -374,7 +436,7 @@ def _handle_payment_chargeback(payload: dict):
 def _handle_subscription_created(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
-    if sub:
+    if sub and _transition_subscription(sub, Subscription.STATUS_ACTIVE, 'subscription_created'):
         sub.status = Subscription.STATUS_ACTIVE
         sub.save(update_fields=['status', 'updated_at'])
 
@@ -383,14 +445,15 @@ def _handle_subscription_updated(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
     if sub and s.get('status') == 'ACTIVE':
-        sub.status = Subscription.STATUS_ACTIVE
-        sub.save(update_fields=['status', 'updated_at'])
+        if _transition_subscription(sub, Subscription.STATUS_ACTIVE, 'subscription_updated'):
+            sub.status = Subscription.STATUS_ACTIVE
+            sub.save(update_fields=['status', 'updated_at'])
 
 
 def _handle_subscription_inactivated(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
-    if sub:
+    if sub and _transition_subscription(sub, Subscription.STATUS_EXPIRED, 'subscription_inactivated'):
         sub.status = Subscription.STATUS_EXPIRED
         sub.save(update_fields=['status', 'updated_at'])
 
@@ -398,7 +461,7 @@ def _handle_subscription_inactivated(payload: dict):
 def _handle_subscription_deleted(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
-    if sub:
+    if sub and _transition_subscription(sub, Subscription.STATUS_CANCELED, 'subscription_deleted'):
         sub.status = Subscription.STATUS_CANCELED
         sub.canceled_at = timezone.now()
         sub.save(update_fields=['status', 'canceled_at', 'updated_at'])

@@ -30,21 +30,25 @@ export function PixPaymentScreen() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+
     pollRef.current = setInterval(async () => {
+      if (!mounted) return;
       try {
         const sub = await fetchSubscription();
-        if (sub.status === 'active') {
+        if (mounted && sub.status === 'active') {
           clearInterval(pollRef.current!);
           Alert.alert('Pagamento confirmado!', 'Sua assinatura está ativa.', [
-            { text: 'OK', onPress: () => navigation.replace('Subscription') },
+            { text: 'OK', onPress: () => { if (mounted) navigation.replace('Subscription'); } },
           ]);
         }
       } catch {
-        // ignore poll errors
+        // ignore poll errors silently
       }
     }, POLL_INTERVAL);
 
     return () => {
+      mounted = false;
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
@@ -81,11 +85,16 @@ export function PixPaymentScreen() {
 
       {pixData.qr_code_image ? (
         <View style={styles.qrContainer}>
-          <Image
-            source={{ uri: `data:image/png;base64,${pixData.qr_code_image}` }}
-            style={styles.qrImage}
-            resizeMode="contain"
-          />
+          {/* iVBOR is the base64 magic number for PNG — validate before rendering */}
+          {pixData.qr_code_image.startsWith('iVBOR') ? (
+            <Image
+              source={{ uri: `data:image/png;base64,${pixData.qr_code_image}` }}
+              style={styles.qrImage}
+              resizeMode="contain"
+            />
+          ) : (
+            <Text style={{ color: '#EF4444', textAlign: 'center' }}>QR code inválido. Use o código Copia e Cola.</Text>
+          )}
         </View>
       ) : (
         <View style={styles.qrPlaceholder}>

@@ -1,8 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
 import { fetchMe, loadStoredUser, logout as logoutSvc } from '../services/auth';
-import { TOKEN_KEY } from '../services/api';
+import { TOKEN_KEY, storage } from '../services/api';
 
 type AuthState = {
   user: User | null;
@@ -20,7 +19,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   const refresh = useCallback(async () => {
-    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    const token = await storage.get(TOKEN_KEY);
     if (!token) {
       setUserState(null);
       setReady(true);
