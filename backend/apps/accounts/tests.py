@@ -13,7 +13,7 @@ class RegistrationTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    @patch('apps.accounts.views.generate_and_store', return_value='123456')
+    @patch('apps.accounts.otp.generate_and_store', return_value='123456')
     @patch('apps.accounts.tasks.send_otp_email.delay')
     def test_register_creates_user(self, mock_task, mock_otp):
         res = self.client.post('/api/auth/register/', {
