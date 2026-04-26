@@ -4,7 +4,7 @@ from .views import (
     user_list, user_detail,
     edition_patch,
     data_sources_list, data_source_patch,
-    ingestion_runs_list,
+    ingestion_runs_list, execution_logs,
 )
 
 urlpatterns = [
@@ -17,4 +17,5 @@ urlpatterns = [
     path('sources/', data_sources_list, name='admin-sources-list'),
     path('sources/<int:pk>/', data_source_patch, name='admin-source-patch'),
     path('runs/', ingestion_runs_list, name='admin-runs-list'),
+    path('execution-logs/', execution_logs, name='admin-execution-logs'),
 ]

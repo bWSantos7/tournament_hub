@@ -19,12 +19,12 @@ import { checkout, CheckoutPayload } from '../../services/billing';
 type CheckoutRouteProp = RouteProp<MainStackParamList, 'Checkout'>;
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
-type PaymentMethod = 'pix' | 'credit_card' | 'boleto';
+type PaymentMethod = 'pix' | 'credit_card' | 'debit_card';
 
 const METHOD_CONFIG: Record<PaymentMethod, { label: string; icon: string; description: string }> = {
   pix:         { label: 'Pix',               icon: '⚡', description: 'Aprovação instantânea' },
-  credit_card: { label: 'Cartão de crédito', icon: '💳', description: 'Débito imediato' },
-  boleto:      { label: 'Boleto',            icon: '🧾', description: 'Vence em 3 dias úteis' },
+  credit_card: { label: 'Cartão de crédito', icon: '💳', description: 'Parcelamento disponível' },
+  debit_card:  { label: 'Cartão de débito',  icon: '🏦', description: 'Débito imediato' },
 };
 
 function formatCardNumber(value: string): string {
@@ -100,29 +100,35 @@ export function CheckoutScreen() {
       return;
     }
 
-    if (method === 'credit_card') {
+    if (method === 'credit_card' || method === 'debit_card') {
       const err = validateCard();
       if (err) { Alert.alert('Dados incompletos', err); return; }
     }
 
     setLoading(true);
     try {
+      const isCard = method === 'credit_card' || method === 'debit_card';
       const payload: CheckoutPayload = {
         plan_slug:      plan.slug as 'pro' | 'elite',
         billing_period: billingPeriod,
         payment_method: method,
-        ...(method === 'credit_card' ? buildCardPayload() : {}),
+        ...(isCard ? buildCardPayload() : {}),
       };
 
       const result = await checkout(payload);
 
-      if (method === 'pix' && result.pix) {
-        navigation.replace('PixPayment', { pixData: result.pix });
-      } else if (method === 'boleto') {
-        Alert.alert('Boleto gerado', 'Acesse o boleto pelo link enviado ao seu e-mail.', [
-          { text: 'OK', onPress: () => navigation.navigate('Subscription') },
-        ]);
-      } else if (method === 'credit_card') {
+      if (method === 'pix') {
+        if (result.pix?.copia_e_cola || result.pix?.qr_code_image) {
+          // Navigate to Pix screen — subscription activates ONLY after webhook confirms
+          navigation.replace('PixPayment', { pixData: result.pix! });
+        } else {
+          Alert.alert(
+            'Pix gerado',
+            'Sua cobrança foi criada. Acesse sua conta bancária e pague o Pix para ativar o plano.',
+            [{ text: 'OK', onPress: () => navigation.navigate('Subscription') }],
+          );
+        }
+      } else if (isCard) {
         const msg = result.status === 'active'
           ? 'Pagamento aprovado! Sua assinatura está ativa.'
           : 'Assinatura criada. Aguardando confirmação do pagamento.';
@@ -194,8 +200,8 @@ export function CheckoutScreen() {
           </>
         )}
 
-        {/* Credit card form */}
-        {method === 'credit_card' && plan.slug !== 'free' && (
+        {/* Card form — shown for both credit and debit */}
+        {(method === 'credit_card' || method === 'debit_card') && plan.slug !== 'free' && (
           <View style={styles.cardForm}>
             <Text style={styles.sectionTitle}>Dados do cartão</Text>
 

@@ -9,9 +9,9 @@ class UserAlertPreference(TimestampedModel):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='alert_preference'
     )
-    email_enabled = models.BooleanField(default=True)
+    email_enabled = models.BooleanField(default=False)  # Email notifications disabled
     in_app_enabled = models.BooleanField(default=True)
-    push_enabled = models.BooleanField(default=False)
+    push_enabled = models.BooleanField(default=True)
 
     deadline_days = models.JSONField(default=list,
                                      help_text='Days before close to notify, e.g. [7,2,0]')

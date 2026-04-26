@@ -13,12 +13,12 @@ import { useTheme } from '../contexts/ThemeContext';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const icons: Record<keyof MainTabParamList, any> = {
-  Home: 'home-outline',
+  Home:        'home-outline',
   Tournaments: 'calendar-outline',
-  Watchlist: 'star-outline',
-  Results: 'ribbon-outline',
-  Alerts: 'notifications-outline',
-  Profile: 'person-outline',
+  Watchlist:   'star-outline',
+  Results:     'ribbon-outline',
+  Alerts:      'notifications-outline',
+  Profile:     'person-outline',
 };
 
 export function MainTabs() {
@@ -32,12 +32,13 @@ export function MainTabs() {
       tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
       tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? icons[route.name].replace('-outline', '') : icons[route.name]} color={color} size={size} />,
     })}>
-      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Início' }} />
+      <Tab.Screen name="Home"        component={HomeScreen}        options={{ title: 'Início' }} />
       <Tab.Screen name="Tournaments" component={TournamentsScreen} options={{ title: 'Torneios' }} />
-      <Tab.Screen name="Watchlist" component={WatchlistScreen} options={{ title: 'Agenda' }} />
-      <Tab.Screen name="Results" component={ResultsScreen} options={{ title: 'Resultados' }} />
-      <Tab.Screen name="Alerts" component={AlertsScreen} options={{ title: 'Alertas' }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Perfil' }} />
+      <Tab.Screen name="Watchlist"   component={WatchlistScreen}   options={{ title: 'Agenda' }} />
+      <Tab.Screen name="Results"     component={ResultsScreen}     options={{ title: 'Resultados' }} />
+      {/* Alerts tab hidden from bottom bar — accessible via notification icon on HomeScreen header */}
+      <Tab.Screen name="Alerts"      component={AlertsScreen}      options={{ title: 'Alertas', tabBarButton: () => null }} />
+      <Tab.Screen name="Profile"     component={ProfileScreen}     options={{ title: 'Perfil' }} />
     </Tab.Navigator>
   );
 }

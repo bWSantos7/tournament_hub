@@ -1,4 +1,4 @@
-import { api } from './api';
+import api from './api';
 import { FederationRegistrationList, TournamentRegistration } from '../types';
 
 export async function myRegistrations(): Promise<TournamentRegistration[]> {

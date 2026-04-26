@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +22,7 @@ interface Dashboard {
     low_confidence: number;
     missing_official_url: number;
   };
-  ingestion: { runs_24h: number; failed_24h: number };
+  ingestion: { runs_24h: number; failed_24h: number; partial_24h?: number };
   alerts: { total_7d: number; failed_7d: number };
   audit: { actions_24h: number };
 }
@@ -38,11 +38,29 @@ interface AdminUser {
   id: number;
   email: string;
   full_name: string;
+  phone?: string;
   role: string;
   is_active: boolean;
   is_staff: boolean;
   is_superuser: boolean;
   email_verified: boolean;
+  marketing_consent?: boolean;
+  created_at?: string;
+  last_login?: string;
+}
+
+interface ExecutionLog {
+  id: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_seconds: number | null;
+  status: string;
+  service: string;
+  organization: string;
+  editions_found: number;
+  editions_created: number;
+  editions_updated: number;
+  error: string;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -50,6 +68,13 @@ const ROLE_LABELS: Record<string, string> = {
   coach: 'Treinador',
   parent: 'Pai/Resp.',
   admin: 'Admin',
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  success: '#39ff14',
+  failed: '#ef4444',
+  partial: '#f59e0b',
+  running: '#3b82f6',
 };
 
 export function AdminPanelScreen({ navigation }: Props) {
@@ -76,7 +101,6 @@ export function AdminPanelScreen({ navigation }: Props) {
         </View>
       </View>
 
-      {/* Tabs */}
       <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, marginBottom: 8 }}>
         {tabs.map((t) => (
           <Pressable
@@ -92,10 +116,10 @@ export function AdminPanelScreen({ navigation }: Props) {
       </View>
 
       {tab === 'dashboard' && <DashboardTab />}
-      {tab === 'review' && <ReviewTab />}
-      {tab === 'sources' && <SourcesTab />}
-      {tab === 'stats' && <StatsTab />}
-      {tab === 'users' && <UsersTab />}
+      {tab === 'review'    && <ReviewTab />}
+      {tab === 'sources'   && <SourcesTab />}
+      {tab === 'stats'     && <StatsTab />}
+      {tab === 'users'     && <UsersTab />}
     </Screen>
   );
 }
@@ -105,14 +129,20 @@ export function AdminPanelScreen({ navigation }: Props) {
 function DashboardTab() {
   const { colors } = useTheme();
   const [dash, setDash] = useState<Dashboard | null>(null);
+  const [logs, setLogs] = useState<ExecutionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await api.get<Dashboard>('/api/admin-panel/dashboard/');
-      setDash(res.data);
+      const [dashRes, logsRes] = await Promise.all([
+        api.get<Dashboard>('/api/admin-panel/dashboard/'),
+        api.get<ExecutionLog[]>('/api/admin-panel/execution-logs/?limit=30'),
+      ]);
+      setDash(dashRes.data);
+      setLogs(logsRes.data);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro ao carregar dashboard', text2: extractApiError(err) });
     } finally {
@@ -125,6 +155,7 @@ function DashboardTab() {
     try {
       await api.post('/api/ingestion/runs/run-all/');
       Toast.show({ type: 'success', text1: 'Ingestão disparada!' });
+      setTimeout(load, 3000);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro ao iniciar ingestão', text2: extractApiError(err) });
     } finally {
@@ -145,14 +176,14 @@ function DashboardTab() {
       </View>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-        <StatCard label="Torneios" value={dash.counts.tournaments_total} colors={colors} />
-        <StatCard label="Abertos" value={dash.counts.tournaments_open} accent colors={colors} />
-        <StatCard label="Fechando" value={dash.counts.tournaments_closing_soon} warn colors={colors} />
-        <StatCard label="Fontes" value={`${dash.counts.data_sources_enabled}/${dash.counts.data_sources_total}`} colors={colors} />
-        <StatCard label="Overrides" value={dash.counts.manual_overrides} colors={colors} />
-        <StatCard label="Baixa conf." value={dash.counts.low_confidence} warn colors={colors} />
-        <StatCard label="Sem URL" value={dash.counts.missing_official_url} warn colors={colors} />
-        <StatCard label="Execuções 24h" value={`${dash.ingestion.runs_24h} (${dash.ingestion.failed_24h} falhas)`} colors={colors} />
+        <StatCard label="Torneios"    value={dash.counts.tournaments_total}        colors={colors} />
+        <StatCard label="Abertos"     value={dash.counts.tournaments_open}         accent colors={colors} />
+        <StatCard label="Fechando"    value={dash.counts.tournaments_closing_soon} warn colors={colors} />
+        <StatCard label="Fontes"      value={`${dash.counts.data_sources_enabled}/${dash.counts.data_sources_total}`} colors={colors} />
+        <StatCard label="Overrides"   value={dash.counts.manual_overrides}         colors={colors} />
+        <StatCard label="Baixa conf." value={dash.counts.low_confidence}           warn colors={colors} />
+        <StatCard label="Sem URL"     value={dash.counts.missing_official_url}     warn colors={colors} />
+        <StatCard label="Exec. 24h"   value={`${dash.ingestion.runs_24h} (${dash.ingestion.failed_24h} falhas)`} colors={colors} />
       </View>
 
       <SectionHeader title="Alertas (7d)" />
@@ -165,6 +196,55 @@ function DashboardTab() {
       <Card>
         <AppText variant="body">Ações: <AppText variant="body" style={{ fontWeight: '700' }}>{dash.audit.actions_24h}</AppText></AppText>
       </Card>
+
+      {/* Execution Logs */}
+      <Pressable
+        onPress={() => setShowLogs(!showLogs)}
+        style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, marginBottom: 4 }}
+      >
+        <AppText variant="section">Logs de execução</AppText>
+        <Ionicons name={showLogs ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+      </Pressable>
+
+      {showLogs && (
+        logs.length === 0 ? (
+          <Card><AppText variant="muted">Nenhuma execução registrada.</AppText></Card>
+        ) : (
+          logs.map((log) => (
+            <View key={log.id} style={{ backgroundColor: colors.bgCard, borderRadius: 12, padding: 12, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: STATUS_COLORS[log.status] ?? colors.borderSubtle }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="body" style={{ fontWeight: '600', fontSize: 12 }}>{log.service}</AppText>
+                  <AppText variant="muted" style={{ fontSize: 10 }}>{log.organization}</AppText>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                  <View style={{ backgroundColor: `${STATUS_COLORS[log.status] ?? colors.borderSubtle}20`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <AppText variant="muted" style={{ fontSize: 10, color: STATUS_COLORS[log.status] ?? colors.textMuted, fontWeight: '700' }}>{log.status.toUpperCase()}</AppText>
+                  </View>
+                  {log.duration_seconds != null && (
+                    <AppText variant="muted" style={{ fontSize: 9 }}>{log.duration_seconds}s</AppText>
+                  )}
+                </View>
+              </View>
+              {log.started_at && (
+                <AppText variant="muted" style={{ fontSize: 10, marginTop: 4 }}>
+                  {new Date(log.started_at).toLocaleString('pt-BR')}
+                </AppText>
+              )}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                {log.editions_found > 0 && <AppText variant="muted" style={{ fontSize: 10 }}>encontrados: {log.editions_found}</AppText>}
+                {log.editions_created > 0 && <AppText variant="muted" style={{ fontSize: 10, color: '#39ff14' }}>+{log.editions_created} novos</AppText>}
+                {log.editions_updated > 0 && <AppText variant="muted" style={{ fontSize: 10, color: '#3b82f6' }}>~{log.editions_updated} atualizados</AppText>}
+              </View>
+              {log.error ? (
+                <AppText variant="muted" style={{ fontSize: 10, color: '#ef4444', marginTop: 4 }} numberOfLines={3}>
+                  {log.error}
+                </AppText>
+              ) : null}
+            </View>
+          ))
+        )
+      )}
     </ScrollView>
   );
 }
@@ -200,20 +280,15 @@ function StatsTab() {
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Period selector */}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
         {[7, 30, 90].map((d) => (
-          <Pressable
-            key={d}
-            onPress={() => { setDays(d); load(d); }}
-            style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: days === d ? colors.accentNeon : colors.borderSubtle, backgroundColor: days === d ? `${colors.accentNeon}15` : 'transparent' }}
-          >
+          <Pressable key={d} onPress={() => { setDays(d); load(d); }}
+            style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: days === d ? colors.accentNeon : colors.borderSubtle, backgroundColor: days === d ? `${colors.accentNeon}15` : 'transparent' }}>
             <AppText variant="caption" style={{ color: days === d ? colors.accentNeon : colors.textMuted }}>{d}d</AppText>
           </Pressable>
         ))}
       </View>
 
-      {/* Totals */}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
         <View style={{ flex: 1, backgroundColor: colors.bgCard, borderRadius: 16, padding: 12, alignItems: 'center' }}>
           <AppText variant="muted" style={{ fontSize: 10 }}>USUÁRIOS</AppText>
@@ -229,7 +304,6 @@ function StatsTab() {
         </View>
       </View>
 
-      {/* Registrations chart */}
       <Card>
         <AppText variant="body" style={{ fontWeight: '600', marginBottom: 12 }}>Cadastros por dia</AppText>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -244,26 +318,24 @@ function StatsTab() {
         </ScrollView>
       </Card>
 
-      {/* Users by role */}
       <Card>
         <AppText variant="body" style={{ fontWeight: '600', marginBottom: 12 }}>Usuários por perfil</AppText>
         {data.users_by_role.map((r, i) => {
-          const colors2 = ['#39ff14', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+          const barColors = ['#39ff14', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
           return (
             <View key={r.role} style={{ marginBottom: 8 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                <AppText variant="caption">{ROLE_LABELS[r.role] ?? r.role}</AppText>
+                <AppText variant="caption">{r.role}</AppText>
                 <AppText variant="caption" style={{ fontWeight: '700' }}>{r.count}</AppText>
               </View>
-              <View style={{ height: 6, backgroundColor: `${colors2[i % colors2.length]}30`, borderRadius: 3 }}>
-                <View style={{ height: 6, width: `${(r.count / maxRole) * 100}%`, backgroundColor: colors2[i % colors2.length], borderRadius: 3 }} />
+              <View style={{ height: 6, backgroundColor: `${barColors[i % barColors.length]}30`, borderRadius: 3 }}>
+                <View style={{ height: 6, width: `${(r.count / maxRole) * 100}%`, backgroundColor: barColors[i % barColors.length], borderRadius: 3 }} />
               </View>
             </View>
           );
         })}
       </Card>
 
-      {/* Tournaments by status */}
       <Card>
         <AppText variant="body" style={{ fontWeight: '600', marginBottom: 12 }}>Torneios por status</AppText>
         {data.tournaments_by_status.map((r) => (
@@ -380,17 +452,53 @@ function UsersTab() {
         </ScrollView>
       )}
 
-      {editing && <EditUserModal user={editing} onClose={() => setEditing(null)} onSaved={onSaved} />}
+      {/* Fix 2: Use proper Modal instead of absolute-positioned overlay */}
+      <Modal
+        visible={!!editing}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditing(null)}
+      >
+        {editing && <EditUserModal user={editing} onClose={() => setEditing(null)} onSaved={onSaved} />}
+      </Modal>
     </View>
   );
 }
 
-// ─── Edit User Modal ───────────────────────────────────────────────────────────
+// ─── Edit User Modal — Fix 13: full fields + confirmation dialogs ─────────────
 
 function EditUserModal({ user, onClose, onSaved }: { user: AdminUser; onClose: () => void; onSaved: (u: AdminUser) => void }) {
   const { colors } = useTheme();
-  const [form, setForm] = useState({ full_name: user.full_name, role: user.role, is_active: user.is_active, is_staff: user.is_staff });
+  const [form, setForm] = useState({
+    full_name: user.full_name,
+    role: user.role,
+    is_active: user.is_active,
+    is_staff: user.is_staff,
+    marketing_consent: user.marketing_consent ?? false,
+  });
   const [saving, setSaving] = useState(false);
+
+  const roles = ['player', 'coach', 'parent', 'admin'];
+
+  function confirmSave() {
+    const changes: string[] = [];
+    if (form.role !== user.role) changes.push(`Perfil: ${ROLE_LABELS[user.role]} → ${ROLE_LABELS[form.role]}`);
+    if (form.is_active !== user.is_active) changes.push(`Status: ${user.is_active ? 'Ativo' : 'Inativo'} → ${form.is_active ? 'Ativo' : 'Inativo'}`);
+    if (form.is_staff !== user.is_staff) changes.push(`Staff: ${user.is_staff ? 'Sim' : 'Não'} → ${form.is_staff ? 'Sim' : 'Não'}`);
+
+    if (changes.length > 0) {
+      Alert.alert(
+        'Confirmar alterações',
+        `Você está prestes a alterar:\n\n${changes.join('\n')}\n\nTem certeza?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Confirmar', style: 'default', onPress: save },
+        ],
+      );
+    } else {
+      save();
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -405,18 +513,17 @@ function EditUserModal({ user, onClose, onSaved }: { user: AdminUser; onClose: (
     }
   }
 
-  const roles = ['player', 'coach', 'parent', 'admin'];
-
   return (
-    <View style={{ position: 'absolute', inset: 0, top: -200, bottom: -200, left: -16, right: -16, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20, zIndex: 100 }}>
-      <View style={{ backgroundColor: colors.bgCard, borderRadius: 20, padding: 20, width: '100%', maxWidth: 360 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+      <View style={{ backgroundColor: colors.bgCard, borderRadius: 20, padding: 20, width: '100%', maxWidth: 380 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <AppText variant="body" style={{ fontWeight: '700', fontSize: 16 }}>Editar usuário</AppText>
-          <Pressable onPress={onClose}><Ionicons name="close" size={22} color={colors.textMuted} /></Pressable>
+          <Pressable onPress={onClose} hitSlop={8}><Ionicons name="close" size={22} color={colors.textMuted} /></Pressable>
         </View>
-        <AppText variant="muted" style={{ marginBottom: 16 }}>{user.email}</AppText>
+        <AppText variant="muted" style={{ fontSize: 12, marginBottom: 16 }}>{user.email}</AppText>
 
-        <AppText variant="caption" style={{ marginBottom: 4 }}>Nome</AppText>
+        {/* Name */}
+        <AppText variant="caption" style={{ marginBottom: 4 }}>Nome completo</AppText>
         <TextInput
           style={{ backgroundColor: colors.bgElevated, borderRadius: 10, padding: 10, color: colors.textPrimary, marginBottom: 12, fontSize: 14 }}
           value={form.full_name}
@@ -424,7 +531,8 @@ function EditUserModal({ user, onClose, onSaved }: { user: AdminUser; onClose: (
           placeholderTextColor={colors.textMuted}
         />
 
-        <AppText variant="caption" style={{ marginBottom: 4 }}>Perfil</AppText>
+        {/* Role */}
+        <AppText variant="caption" style={{ marginBottom: 6 }}>Perfil</AppText>
         <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
           {roles.map((r) => (
             <Pressable
@@ -437,22 +545,46 @@ function EditUserModal({ user, onClose, onSaved }: { user: AdminUser; onClose: (
           ))}
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-          <Pressable onPress={() => setForm({ ...form, is_active: !form.is_active })} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: colors.bgElevated, borderRadius: 10 }}>
+        {/* Account status + staff */}
+        <AppText variant="caption" style={{ marginBottom: 6 }}>Conta</AppText>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <Pressable onPress={() => setForm({ ...form, is_active: !form.is_active })}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: colors.bgElevated, borderRadius: 10 }}>
             <Ionicons name={form.is_active ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={form.is_active ? colors.accentNeon : colors.textMuted} />
-            <AppText variant="caption">Ativa</AppText>
+            <AppText variant="caption">Conta ativa</AppText>
           </Pressable>
           {!user.is_superuser && (
-            <Pressable onPress={() => setForm({ ...form, is_staff: !form.is_staff })} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: colors.bgElevated, borderRadius: 10 }}>
+            <Pressable onPress={() => setForm({ ...form, is_staff: !form.is_staff })}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: colors.bgElevated, borderRadius: 10 }}>
               <Ionicons name={form.is_staff ? 'shield-checkmark' : 'shield-outline'} size={18} color={form.is_staff ? colors.accentBlue : colors.textMuted} />
-              <AppText variant="caption">Staff</AppText>
+              <AppText variant="caption">Acesso admin</AppText>
             </Pressable>
+          )}
+        </View>
+
+        {/* Info (read-only) */}
+        <View style={{ backgroundColor: colors.bgElevated, borderRadius: 10, padding: 10, marginBottom: 16, gap: 4 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <AppText variant="muted" style={{ fontSize: 11 }}>E-mail verificado</AppText>
+            <Ionicons name={user.email_verified ? 'checkmark-circle' : 'close-circle'} size={14} color={user.email_verified ? '#39ff14' : '#ef4444'} />
+          </View>
+          {user.created_at && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <AppText variant="muted" style={{ fontSize: 11 }}>Cadastrado em</AppText>
+              <AppText variant="muted" style={{ fontSize: 11 }}>{new Date(user.created_at).toLocaleDateString('pt-BR')}</AppText>
+            </View>
+          )}
+          {user.last_login && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <AppText variant="muted" style={{ fontSize: 11 }}>Último login</AppText>
+              <AppText variant="muted" style={{ fontSize: 11 }}>{new Date(user.last_login).toLocaleDateString('pt-BR')}</AppText>
+            </View>
           )}
         </View>
 
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Button title="Cancelar" variant="secondary" onPress={onClose} />
-          <Button title="Salvar" onPress={save} loading={saving} />
+          <Button title="Salvar" onPress={confirmSave} loading={saving} />
         </View>
       </View>
     </View>
@@ -575,15 +707,12 @@ function ReviewTab() {
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <Pressable
                       onPress={() => { setEditingId(ed.id); setEditUrl(ed.official_source_url || ''); }}
-                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6, backgroundColor: colors.bgElevated, borderRadius: 8 }}
-                    >
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6, backgroundColor: colors.bgElevated, borderRadius: 8 }}>
                       <Ionicons name="link-outline" size={14} color={colors.textMuted} />
                       <AppText variant="muted" style={{ fontSize: 11 }} numberOfLines={1}>{ed.official_source_url || 'Sem URL'}</AppText>
                     </Pressable>
-                    <Pressable
-                      onPress={() => markHighConfidence(ed.id)}
-                      style={{ padding: 6, backgroundColor: `${colors.accentNeon}15`, borderRadius: 8 }}
-                    >
+                    <Pressable onPress={() => markHighConfidence(ed.id)}
+                      style={{ padding: 6, backgroundColor: `${colors.accentNeon}15`, borderRadius: 8 }}>
                       <Ionicons name="checkmark-circle-outline" size={16} color={colors.accentNeon} />
                     </Pressable>
                   </View>
@@ -665,19 +794,11 @@ function SourcesTab() {
                 <AppText variant="muted" style={{ fontSize: 10, marginTop: 2 }}>{s.connector_key} • {s.source_type} • {s.priority}</AppText>
                 <AppText variant="muted" style={{ fontSize: 10 }}>{s.fetch_schedule_cron}</AppText>
               </View>
-              <Pressable
-                onPress={() => toggleSource(s)}
-                disabled={toggling === s.id}
-                style={{ padding: 6 }}
-              >
+              <Pressable onPress={() => toggleSource(s)} disabled={toggling === s.id} style={{ padding: 6 }}>
                 {toggling === s.id ? (
                   <ActivityIndicator size="small" color={colors.accentNeon} />
                 ) : (
-                  <Ionicons
-                    name={s.enabled ? 'toggle' : 'toggle-outline'}
-                    size={28}
-                    color={s.enabled ? colors.accentNeon : colors.textMuted}
-                  />
+                  <Ionicons name={s.enabled ? 'toggle' : 'toggle-outline'} size={28} color={s.enabled ? colors.accentNeon : colors.textMuted} />
                 )}
               </Pressable>
             </View>

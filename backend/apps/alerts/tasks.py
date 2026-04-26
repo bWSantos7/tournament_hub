@@ -2,11 +2,7 @@ import logging
 from datetime import timedelta
 
 from celery import shared_task
-from django.conf import settings
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.utils import timezone
-from django.utils.html import strip_tags
 
 from .models import Alert, PushSubscription, UserAlertPreference
 from apps.watchlist.models import WatchlistItem
@@ -14,52 +10,77 @@ from apps.tournaments.models import TournamentEdition, TournamentChangeEvent
 
 logger = logging.getLogger('apps.alerts')
 
+# Human-readable labels for tournament field names shown in change alerts
+_FIELD_LABELS: dict[str, str] = {
+    'entry_close_at':   'Prazo de inscrição',
+    'start_date':       'Data de início',
+    'end_date':         'Data de término',
+    'venue':            'Local',
+    'venue_name':       'Local',
+    'city':             'Cidade',
+    'state':            'Estado',
+    'status':           'Status',
+    'title':            'Nome do torneio',
+    'max_participants': 'Vagas',
+    'price':            'Valor da inscrição',
+    'draws_url':        'Link das chaves',
+    'official_source_url': 'Link oficial',
+    'category':         'Categoria',
+    'surface':          'Superfície',
+}
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_email_alert(self, alert_id: int):
-    try:
-        alert = Alert.objects.select_related('user', 'edition').get(pk=alert_id)
-    except Alert.DoesNotExist:
-        logger.warning('Alert %s not found', alert_id)
-        return
+_STATUS_LABELS: dict[str, str] = {
+    'open':          'Aberto',
+    'closing_soon':  'Fechando em breve',
+    'closed':        'Encerrado',
+    'finished':      'Finalizado',
+    'canceled':      'Cancelado',
+    'upcoming':      'Em breve',
+}
 
-    if not alert.user.email:
-        alert.status = Alert.STATUS_FAILED
-        alert.error = 'no_email'
-        alert.save(update_fields=['status', 'error', 'updated_at'])
-        return
 
-    ctx = {
-        'user': alert.user,
-        'alert': alert,
-        'edition': alert.edition,
-        'frontend_url': getattr(settings, 'FRONTEND_URL', ''),
-    }
+def _fmt_value(field_name: str, value) -> str:
+    """Format a raw field value into a user-friendly string."""
+    if value is None:
+        return 'não informado'
+    v = str(value)
+    # ISO datetime → Brazilian format
+    if 'T' in v and ('+' in v or 'Z' in v or len(v) > 16):
+        try:
+            from datetime import datetime
+            import pytz
+            dt = datetime.fromisoformat(v.replace('Z', '+00:00'))
+            brasilia = pytz.timezone('America/Sao_Paulo')
+            local = dt.astimezone(brasilia)
+            return local.strftime('%d/%m/%Y às %H:%M')
+        except Exception:
+            pass
+    # ISO date only → dd/mm/yyyy
+    if len(v) == 10 and v[4] == '-' and v[7] == '-':
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(v, '%Y-%m-%d')
+            return dt.strftime('%d/%m/%Y')
+        except Exception:
+            pass
+    # Status labels
+    if field_name == 'status':
+        return _STATUS_LABELS.get(v, v)
+    return v
 
-    try:
-        html_body = render_to_string('alerts/email_alert.html', ctx)
-    except Exception:
-        html_body = f'<h2>{alert.title}</h2><p>{alert.body}</p>'
-    text_body = strip_tags(html_body)
 
-    try:
-        send_mail(
-            subject=f'[Tournament Hub] {alert.title}',
-            message=text_body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[alert.user.email],
-            html_message=html_body,
-            fail_silently=False,
-        )
-        alert.status = Alert.STATUS_SENT
-        alert.dispatched_at = timezone.now()
-        alert.save(update_fields=['status', 'dispatched_at', 'updated_at'])
-    except Exception as exc:
-        logger.exception('Failed to send email alert %s', alert_id)
-        alert.status = Alert.STATUS_FAILED
-        alert.error = str(exc)[:300]
-        alert.save(update_fields=['status', 'error', 'updated_at'])
-        raise self.retry(exc=exc)
+def _build_change_body(field_changes: dict) -> str:
+    """Convert raw field_changes dict into user-friendly Portuguese text."""
+    lines = []
+    for field_name, change in (field_changes or {}).items():
+        label = _FIELD_LABELS.get(field_name, field_name.replace('_', ' ').title())
+        if isinstance(change, dict):
+            old_val = _fmt_value(field_name, change.get('old'))
+            new_val = _fmt_value(field_name, change.get('new'))
+            lines.append(f'{label} alterado para {new_val} (era {old_val})')
+        else:
+            lines.append(f'{label}: {_fmt_value(field_name, change)}')
+    return '\n'.join(lines) if lines else 'Mudanças detectadas na fonte oficial.'
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -78,6 +99,8 @@ def send_push_alert(self, alert_id: int):
         alert.save(update_fields=['status', 'error', 'updated_at'])
         return
 
+    vapid_private_key = __import__('django.conf', fromlist=['settings']).settings.VAPID_PRIVATE_KEY if True else ''
+    from django.conf import settings
     vapid_private_key = getattr(settings, 'VAPID_PRIVATE_KEY', '')
     vapid_claims_email = getattr(settings, 'VAPID_CLAIMS_EMAIL', settings.DEFAULT_FROM_EMAIL)
     if not vapid_private_key:
@@ -118,7 +141,6 @@ def send_push_alert(self, alert_id: int):
         except Exception as exc:
             errors.append(str(exc)[:100])
             logger.warning('Push send failed for sub %s: %s', sub.id, exc)
-            # 410 Gone means the subscription is expired — clean it up
             if '410' in str(exc):
                 sub.delete()
 
@@ -147,9 +169,8 @@ def _create_alert(user, edition, kind, channel, title, body='', payload=None, de
         payload=payload or {},
         dedup_key=dedup_key,
     )
-    if channel == Alert.CHANNEL_EMAIL:
-        send_email_alert.delay(alert.id)
-    elif channel == Alert.CHANNEL_PUSH:
+    # Email channel removed — only push and in-app are dispatched
+    if channel == Alert.CHANNEL_PUSH:
         send_push_alert.delay(alert.id)
     else:
         alert.status = Alert.STATUS_SENT
@@ -163,10 +184,6 @@ def dispatch_deadline_alerts(self):
     """
     For every watchlist item whose user wants deadline alerts,
     send a notification when entry_close_at falls within D-N windows.
-
-    Uses a date-based approach (not hour window) so the task is resilient to
-    missed runs: dedup keys prevent duplicate alerts even if task fires multiple
-    times in the same day.
     """
     import pytz
     brasilia = pytz.timezone('America/Sao_Paulo')
@@ -183,7 +200,7 @@ def dispatch_deadline_alerts(self):
     )
     for item in qs:
         prefs = UserAlertPreference.get_or_create_defaults(item.user)
-        if not prefs.in_app_enabled and not prefs.email_enabled and not prefs.push_enabled:
+        if not prefs.in_app_enabled and not prefs.push_enabled:
             continue
         days_list = prefs.deadline_days or [7, 2, 0]
 
@@ -203,23 +220,12 @@ def dispatch_deadline_alerts(self):
             )
             body = (
                 f'O prazo de inscrição encerra em '
-                f'{close_local.strftime("%d/%m/%Y %H:%M")} '
-                f'(horário de Brasília). Link oficial: {item.edition.official_source_url or "-"}'
+                f'{close_local.strftime("%d/%m/%Y às %H:%M")} '
+                f'(horário de Brasília).'
             )
 
-            channel = Alert.CHANNEL_EMAIL if prefs.email_enabled else Alert.CHANNEL_IN_APP
-            a = _create_alert(
-                user=item.user, edition=item.edition,
-                kind=Alert.KIND_DEADLINE, channel=channel,
-                title=title, body=body,
-                payload={'days_before': d},
-                dedup_key=dedup,
-            )
-            if a:
-                created += 1
-
-            # Also send in-app when email is primary
-            if channel == Alert.CHANNEL_EMAIL and prefs.in_app_enabled:
+            # In-app notification
+            if prefs.in_app_enabled:
                 _create_alert(
                     user=item.user, edition=item.edition,
                     kind=Alert.KIND_DEADLINE, channel=Alert.CHANNEL_IN_APP,
@@ -227,7 +233,9 @@ def dispatch_deadline_alerts(self):
                     payload={'days_before': d},
                     dedup_key=dedup + ':app',
                 )
+                created += 1
 
+            # Push notification
             if prefs.push_enabled:
                 _create_alert(
                     user=item.user, edition=item.edition,
@@ -236,6 +244,7 @@ def dispatch_deadline_alerts(self):
                     payload={'days_before': d},
                     dedup_key=dedup + ':push',
                 )
+                created += 1
 
     logger.info('Dispatched %d deadline alerts', created)
     return created
@@ -270,30 +279,29 @@ def dispatch_change_alert(self, edition_id: int, event_id: int):
             kind = Alert.KIND_CHANGE
             title = f'{edition.title} — dados alterados ({event.get_event_type_display()})'
 
-        body_parts = []
-        for field_name, change in (event.field_changes or {}).items():
-            old = change.get('old') if isinstance(change, dict) else None
-            new = change.get('new') if isinstance(change, dict) else change
-            body_parts.append(f'{field_name}: {old} → {new}')
-        body = '\n'.join(body_parts) or 'Mudanças detectadas na fonte oficial.'
+        # Human-readable body — no raw field names exposed to users
+        body = _build_change_body(event.field_changes)
 
-        channel = Alert.CHANNEL_EMAIL if prefs.email_enabled else Alert.CHANNEL_IN_APP
         dedup = f'{kind}:{edition_id}:{event_id}'
-        a = _create_alert(
-            user=item.user, edition=edition,
-            kind=kind, channel=channel,
-            title=title, body=body,
-            payload={'event_id': event_id, 'field_changes': event.field_changes},
-            dedup_key=dedup,
-        )
-        if a:
-            created += 1
-        if channel == Alert.CHANNEL_EMAIL and prefs.in_app_enabled:
-            _create_alert(
+
+        if prefs.in_app_enabled:
+            a = _create_alert(
                 user=item.user, edition=edition,
                 kind=kind, channel=Alert.CHANNEL_IN_APP,
                 title=title, body=body,
-                payload={'event_id': event_id},
+                payload={'event_id': event_id, 'field_changes': event.field_changes},
                 dedup_key=dedup + ':app',
             )
+            if a:
+                created += 1
+
+        if prefs.push_enabled:
+            _create_alert(
+                user=item.user, edition=edition,
+                kind=kind, channel=Alert.CHANNEL_PUSH,
+                title=title, body=body,
+                payload={'event_id': event_id},
+                dedup_key=dedup + ':push',
+            )
+
     return created

@@ -299,6 +299,37 @@ def data_sources_list(request):
     return Response(DataSourceSerializer(qs, many=True).data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def execution_logs(request):
+    """Return recent ingestion runs with timestamps, status, errors and service info."""
+    limit = min(int(request.query_params.get('limit', 50)), 200)
+    runs = (
+        IngestionRun.objects
+        .select_related('data_source__organization')
+        .order_by('-started_at')[:limit]
+    )
+    data = []
+    for run in runs:
+        data.append({
+            'id': run.id,
+            'started_at': run.started_at.isoformat() if run.started_at else None,
+            'finished_at': run.finished_at.isoformat() if run.finished_at else None,
+            'duration_seconds': (
+                int((run.finished_at - run.started_at).total_seconds())
+                if run.finished_at and run.started_at else None
+            ),
+            'status': run.status,
+            'service': run.data_source.source_name if run.data_source else 'manual',
+            'organization': run.data_source.organization.short_name if run.data_source and run.data_source.organization else '—',
+            'editions_found': getattr(run, 'editions_found', 0),
+            'editions_created': getattr(run, 'editions_created', 0),
+            'editions_updated': getattr(run, 'editions_updated', 0),
+            'error': run.error_message if hasattr(run, 'error_message') else (run.notes or ''),
+        })
+    return Response(data)
+
+
 @api_view(['PATCH'])
 @permission_classes([IsAdmin])
 def data_source_patch(request, pk):

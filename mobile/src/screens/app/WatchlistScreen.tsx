@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,7 +9,7 @@ import { MainStackParamList, MainTabParamList } from '../../navigation/types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { AppText, Card, EmptyState, LoadingBlock, Screen, SectionHeader } from '../../components/ui';
 import { TournamentCard } from '../../components/TournamentCard';
-import { listWatchlist, watchlistSummary } from '../../services/data';
+import { listWatchlist, watchlistSummary, removeWatchlist } from '../../services/data';
 import { WatchlistItem } from '../../types';
 
 function detectConflicts(items: WatchlistItem[]): Set<number> {
@@ -45,6 +45,7 @@ export function WatchlistScreen(_: Props) {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [conflicts, setConflicts] = useState<Set<number>>(new Set());
+  const [removing, setRemoving] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -70,6 +71,32 @@ export function WatchlistScreen(_: Props) {
       return () => { active = false; };
     }, []),
   );
+
+  function handleRemove(item: WatchlistItem) {
+    Alert.alert(
+      'Remover da agenda',
+      `Remover "${item.edition_detail.title || item.edition_detail.tournament?.name || 'este torneio'}" da sua agenda?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: async () => {
+            setRemoving(item.id);
+            try {
+              await removeWatchlist(item.id);
+              setItems((prev) => prev.filter((i) => i.id !== item.id));
+              Toast.show({ type: 'success', text1: 'Removido da agenda.' });
+            } catch {
+              Toast.show({ type: 'error', text1: 'Erro ao remover da agenda.' });
+            } finally {
+              setRemoving(null);
+            }
+          },
+        },
+      ],
+    );
+  }
 
   return (
     <Screen>
@@ -120,10 +147,21 @@ export function WatchlistScreen(_: Props) {
                 <AppText variant="caption" style={{ color: '#f59e0b', fontSize: 10 }}>Conflito de datas</AppText>
               </View>
             )}
-            <TournamentCard
-              edition={item.edition_detail}
-              onPress={() => navigation.navigate('TournamentDetail', { id: item.edition_detail.id, edition: item.edition_detail })}
-            />
+            <View style={{ position: 'relative' }}>
+              <TournamentCard
+                edition={item.edition_detail}
+                onPress={() => navigation.navigate('TournamentDetail', { id: item.edition_detail.id, edition: item.edition_detail })}
+              />
+              {/* Remove from agenda button */}
+              <Pressable
+                onPress={() => handleRemove(item)}
+                disabled={removing === item.id}
+                style={{ position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 8, padding: 6, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}
+                hitSlop={8}
+              >
+                <Ionicons name={removing === item.id ? 'hourglass-outline' : 'trash-outline'} size={14} color="#ef4444" />
+              </Pressable>
+            </View>
           </View>
         ))
       )}

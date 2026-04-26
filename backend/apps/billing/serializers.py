@@ -69,7 +69,7 @@ class CheckoutSerializer(serializers.Serializer):
     plan_slug      = serializers.ChoiceField(choices=['free', 'pro', 'elite'])
     billing_period = serializers.ChoiceField(choices=['monthly', 'yearly'], default='monthly')
     payment_method = serializers.ChoiceField(
-        choices=['credit_card', 'pix', 'boleto', 'debit_card'], default='pix'
+        choices=['credit_card', 'pix', 'debit_card'], default='pix'
     )
     card_token        = serializers.CharField(required=False, allow_blank=True, default='')
     card_holder_name  = serializers.CharField(required=False, allow_blank=True, default='')
