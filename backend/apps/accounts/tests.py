@@ -13,16 +13,20 @@ class RegistrationTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    @patch('apps.accounts.otp.generate_and_store', return_value='123456')
     @patch('apps.accounts.tasks.send_otp_email.delay')
-    def test_register_creates_user(self, mock_task, mock_otp):
+    @patch('apps.accounts.otp.cache')
+    def test_register_creates_user(self, mock_cache, mock_task):
+        mock_cache.set.return_value = None
+        mock_cache.delete.return_value = None
+        mock_cache.get.return_value = 0  # no lockout, no existing attempts
         res = self.client.post('/api/auth/register/', {
             'email': 'test@example.com',
             'password': 'Str0ngPass!',
+            'password_confirm': 'Str0ngPass!',
             'full_name': 'Test User',
             'phone': '+5511999999999',
             'role': 'player',
-            'lgpd_consent': True,
+            'accept_terms': True,
         }, format='json')
         self.assertEqual(res.status_code, 201)
         self.assertIn('access', res.data)
@@ -33,10 +37,11 @@ class RegistrationTestCase(TestCase):
         res = self.client.post('/api/auth/register/', {
             'email': 'dup@example.com',
             'password': 'Str0ngPass!',
+            'password_confirm': 'Str0ngPass!',
             'full_name': 'Dup',
             'phone': '+5511999999999',
             'role': 'player',
-            'lgpd_consent': True,
+            'accept_terms': True,
         }, format='json')
         self.assertIn(res.status_code, [400, 422])
 
