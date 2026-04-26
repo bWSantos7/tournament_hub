@@ -285,8 +285,13 @@ def asaas_webhook(request):
     payment_data = payload.get('payment', {})
     asaas_id = payment_data.get('id', '') or payload.get('subscription', {}).get('id', '')
 
+    if not asaas_id:
+        # Events without an ID cannot be deduplicated — log and accept but don't process
+        logger.warning('Webhook received without asaas_id: event_type=%s — accepted but skipped processing', event_type)
+        return Response({'received': True})
+
     # Idempotency: skip already-processed events with the same asaas_id+event_type
-    if asaas_id and WebhookEvent.objects.filter(
+    if WebhookEvent.objects.filter(
         asaas_id=asaas_id, event_type=event_type, processed=True
     ).exists():
         logger.info('Duplicate webhook skipped: %s %s', event_type, asaas_id)

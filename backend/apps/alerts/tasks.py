@@ -99,7 +99,6 @@ def send_push_alert(self, alert_id: int):
         alert.save(update_fields=['status', 'error', 'updated_at'])
         return
 
-    vapid_private_key = __import__('django.conf', fromlist=['settings']).settings.VAPID_PRIVATE_KEY if True else ''
     from django.conf import settings
     vapid_private_key = getattr(settings, 'VAPID_PRIVATE_KEY', '')
     vapid_claims_email = getattr(settings, 'VAPID_CLAIMS_EMAIL', settings.DEFAULT_FROM_EMAIL)

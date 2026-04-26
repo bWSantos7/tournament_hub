@@ -24,7 +24,13 @@ def _require(key: str) -> str:
 
 
 # Security — no insecure defaults for critical keys
-SECRET_KEY = _require('SECRET_KEY')
+_raw_secret = _require('SECRET_KEY')
+if len(_raw_secret) < 50:
+    raise ImproperlyConfigured(
+        'SECRET_KEY must be at least 50 characters long. '
+        'Generate a strong key with: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"'
+    )
+SECRET_KEY = _raw_secret
 DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 # Railway internal healthcheck always uses this hostname regardless of the public domain
@@ -272,7 +278,11 @@ if RESEND_API_KEY:
 elif DEBUG:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 else:
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    # Production without Resend key: fail loudly so emails are never silently dropped
+    raise ImproperlyConfigured(
+        'RESEND_API_KEY is required in production. '
+        'Set it in Railway Variables. Without it, OTP/password reset emails will never reach users.'
+    )
 
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@tournamenthub.app')
 

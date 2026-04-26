@@ -1,5 +1,6 @@
 """Celery tasks for the accounts app — email dispatch with retry and HTML templates."""
 import logging
+from html import escape as _esc
 
 from celery import shared_task
 from django.conf import settings
@@ -9,7 +10,7 @@ logger = logging.getLogger('apps.accounts')
 
 APP_NAME   = 'Tennis Hub'
 APP_SLOGAN = 'Seu hub de torneios de tênis no Brasil'
-BRAND      = '#39ff14'       # neon green
+BRAND      = '#39ff14'
 BRAND_DARK = '#2bcc0f'
 BG         = '#0A0A0A'
 CARD       = '#141414'
@@ -18,11 +19,16 @@ TEXT       = '#F3F4F6'
 MUTED      = '#9CA3AF'
 SUBTLE     = '#4B5563'
 DANGER     = '#ef4444'
-FRONTEND   = 'https://tennis.app.br'
+
+def _frontend() -> str:
+    """Always read from settings so domain changes don't require a code deploy."""
+    return getattr(settings, 'FRONTEND_URL', 'https://tennis.app.br').rstrip('/')
 
 
 def _html(title: str, content: str, preview: str = '') -> str:
-    """Render a complete branded email. preview = hidden preheader text."""
+    """Render a complete branded email. preview = hidden preheader text.
+    All user-controlled values must be escaped with _esc() before passing as content."""
+    frontend = _frontend()
     return f"""<!DOCTYPE html>
 <html lang="pt-BR" xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -98,7 +104,7 @@ def _html(title: str, content: str, preview: str = '') -> str:
     <div class="footer">
       <p class="footer-logo">🎾 {APP_NAME}</p>
       <p>{APP_SLOGAN}</p>
-      <p><a href="{FRONTEND}">{FRONTEND}</a></p>
+      <p><a href="{frontend}">{frontend}</a></p>
       <hr style="border:none;border-top:1px solid {BORDER};margin:16px 0"/>
       <p>Você recebe este e-mail porque possui uma conta no {APP_NAME}.</p>
       <p>Se não reconhece esta ação, ignore este e-mail — sua conta continua segura.</p>
@@ -120,7 +126,8 @@ def _send(subject: str, to: str, text: str, html: str):
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
 def send_otp_email(self, user_id: int, email: str, full_name: str, code: str, subject_key: str = 'verify'):
-    name = (full_name or email.split('@')[0]).split(' ')[0].capitalize()
+    # _esc() prevents XSS if full_name contains HTML characters
+    name = _esc((full_name or email.split('@')[0]).split(' ')[0].capitalize())
 
     cfg = {
         'verify': {
@@ -183,7 +190,7 @@ def send_otp_email(self, user_id: int, email: str, full_name: str, code: str, su
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
 def send_password_reset_email(self, user_id: int, email: str, full_name: str, reset_url: str):
     """Password reset email. reset_url contains uid+token — NEVER logged."""
-    name = (full_name or email.split('@')[0]).split(' ')[0].capitalize()
+    name = _esc((full_name or email.split('@')[0]).split(' ')[0].capitalize())
     subject = f'[{APP_NAME}] Redefinição de senha'
 
     content = f"""
