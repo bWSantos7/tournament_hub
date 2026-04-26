@@ -1,3 +1,4 @@
+import logging
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework import viewsets, permissions, status
@@ -6,6 +7,22 @@ from rest_framework.response import Response
 from .models import WatchlistItem, TournamentResult
 from .serializers import WatchlistItemSerializer, TournamentResultSerializer
 from apps.tournaments.models import TournamentEdition
+
+logger = logging.getLogger('apps.watchlist')
+
+
+def _audit(user, action_name: str, resource_id: str, detail: str = ''):
+    try:
+        from apps.audit.models import AuditLog
+        AuditLog.objects.create(
+            actor=user,
+            action=action_name,
+            resource_type='watchlist',
+            resource_id=resource_id,
+            changes={'detail': detail},
+        )
+    except Exception as exc:
+        logger.warning('Audit log failed: %s', exc)
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):
@@ -75,14 +92,27 @@ class WatchlistViewSet(viewsets.ModelViewSet):
         item = WatchlistItem.objects.filter(user=request.user, edition=edition).first()
         if item:
             item.delete()
+            _audit(request.user, 'watchlist.remove', str(edition_id), f'Removed edition {edition_id} from watchlist')
             return Response({'watching': False, 'edition_id': edition_id})
         item = WatchlistItem.objects.create(
             user=request.user,
             edition=edition,
             profile_id=profile_id,
         )
+        _audit(request.user, 'watchlist.add', str(edition_id), f'Added edition {edition_id} to watchlist')
         return Response({
             'watching': True,
             'edition_id': edition_id,
             'item': WatchlistItemSerializer(item).data,
         }, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        _audit(self.request.user, 'watchlist.remove', str(instance.edition_id), f'Removed edition {instance.edition_id} from watchlist')
+        instance.delete()
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.user_status
+        saved = serializer.save()
+        if saved.user_status != old_status:
+            _audit(self.request.user, 'watchlist.status_change', str(saved.edition_id),
+                   f'Status changed: {old_status} → {saved.user_status}')

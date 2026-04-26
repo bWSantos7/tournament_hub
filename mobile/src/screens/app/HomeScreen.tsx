@@ -112,6 +112,31 @@ export function HomeScreen(_: Props) {
         <SectionHeader title="Recentemente adicionados" subtitle="Últimos torneios agregados pelas fontes" />
         {recent.length === 0 ? <EmptyState title="Nenhum torneio na base ainda." subtitle="As ingestões acontecem automaticamente a cada hora." /> : recent.map((ed) => <TournamentCard key={ed.id} edition={ed} onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)}
       </View>
+
+      {/* Circuit Explorer — spec requirement: "Explorar por circuito" */}
+      <View>
+        <SectionHeader title="Explorar por circuito" subtitle="Selecione um circuito para ver torneios" />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {CIRCUITS.map((c) => (
+            <Pressable
+              key={c.key}
+              onPress={() => navigation.navigate('Tabs', { screen: 'Tournaments', params: { circuit: c.key } } as never)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: `${c.color}18`, borderWidth: 1, borderColor: `${c.color}44` }}
+            >
+              <AppText variant="caption" style={{ color: c.color, fontWeight: '700', fontSize: 13 }}>{c.label}</AppText>
+            </Pressable>
+          ))}
+        </View>
+      </View>
     </Screen>
   );
 }
+
+const CIRCUITS = [
+  { key: 'FPT',   label: 'FPT',   color: '#39ff14' },
+  { key: 'CBT',   label: 'CBT',   color: '#3b82f6' },
+  { key: 'COSAT', label: 'COSAT', color: '#f59e0b' },
+  { key: 'ITF',   label: 'ITF',   color: '#8b5cf6' },
+  { key: 'UTR',   label: 'UTR',   color: '#ef4444' },
+  { key: 'FCT',   label: 'FCT',   color: '#06b6d4' },
+];
