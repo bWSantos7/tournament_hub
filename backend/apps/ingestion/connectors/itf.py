@@ -67,6 +67,18 @@ class ITFJuniorConnector(BaseConnector):
             'page': 1,
         }
 
+        # ITF requires browser-like headers to avoid 403
+        self.session.headers.update({
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://www.itftennis.com/en/tournament-calendar/',
+            'Origin': 'https://www.itftennis.com',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        })
+
         seen = set()
         while True:
             try:

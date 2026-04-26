@@ -8,13 +8,41 @@ from django.utils import timezone
 from apps.sources.models import DataSource
 from apps.tournaments.models import TournamentEdition, TournamentChangeEvent
 from .connectors.base import get_connector, ConnectorError
-from .connectors import cbt as _cbt  # noqa: F401
-from .connectors import fct as _fct  # noqa: F401
-from .connectors import fpt as _fpt  # noqa: F401
+from .connectors import cbt as _cbt      # noqa: F401
+from .connectors import cosat as _cosat  # noqa: F401
+from .connectors import fct as _fct      # noqa: F401
+from .connectors import fpt as _fpt      # noqa: F401
+from .connectors import itf as _itf      # noqa: F401
+from .connectors import utr as _utr      # noqa: F401
 from .models import IngestionRun
 from .persistence import TournamentPersister
 
 logger = logging.getLogger('apps.ingestion.tasks')
+
+_CB_THRESHOLD = 3   # auto-disable after 3 consecutive failures
+_CB_TTL       = 3600  # 1 hour cooldown
+
+
+def _record_connector_failure(connector_key: str, error: str):
+    """Track consecutive connector failures — auto-disables after threshold."""
+    from django.core.cache import cache
+    failures_key = f'connector:failures:{connector_key}'
+    open_key = f'connector:open:{connector_key}'
+    failures = cache.get(failures_key, 0) + 1
+    cache.set(failures_key, failures, _CB_TTL * 2)
+    if failures >= _CB_THRESHOLD:
+        cache.set(open_key, True, _CB_TTL)
+        logger.error(
+            'Connector %s BLOCKED after %d failures (last: %s). '
+            'Check /api/admin-panel/connector-status/ and curate manually if needed.',
+            connector_key, failures, error[:200],
+        )
+
+
+def _record_connector_success(connector_key: str):
+    from django.core.cache import cache
+    cache.delete(f'connector:failures:{connector_key}')
+    cache.delete(f'connector:open:{connector_key}')
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=300)
@@ -27,6 +55,12 @@ def run_source(self, data_source_id: int):
 
     if not source.enabled:
         return {'skipped': True, 'reason': 'disabled'}
+
+    # Per-connector circuit breaker — skip if recently blocked
+    from django.core.cache import cache as _cache
+    if _cache.get(f'connector:open:{source.connector_key}'):
+        logger.warning('Connector %s skipped — circuit open (consecutive failures). Admin must curate manually or wait for cooldown.', source.connector_key)
+        return {'skipped': True, 'reason': 'circuit_open'}
 
     connector_cls = get_connector(source.connector_key)
     if not connector_cls:
@@ -71,10 +105,14 @@ def run_source(self, data_source_id: int):
     except ConnectorError as exc:
         errors.append(str(exc))
         status = IngestionRun.STATUS_FAILED
+        _record_connector_failure(source.connector_key, str(exc))
     except Exception as exc:
         errors.append(str(exc))
         status = IngestionRun.STATUS_FAILED
+        _record_connector_failure(source.connector_key, str(exc))
         logger.exception('unhandled ingestion error')
+    else:
+        _record_connector_success(source.connector_key)
 
     run.finished_at = timezone.now()
     run.status = status

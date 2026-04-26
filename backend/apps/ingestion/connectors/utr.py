@@ -58,20 +58,23 @@ class UTRConnector(BaseConnector):
             'sport': 'tennis',
         }
 
+        # UTR requires session-like headers — update session for all requests
+        self.session.headers.update({
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
+            'Origin': 'https://app.utrsports.net',
+            'Referer': 'https://app.utrsports.net/events',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+        })
+
         seen = set()
         max_pages = 20  # Safety limit
 
         for _ in range(max_pages):
             try:
-                resp = self.fetch(
-                    self.EVENTS_API,
-                    params=params,
-                    headers={
-                        'Accept': 'application/json',
-                        'Origin': 'https://app.utrsports.net',
-                        'Referer': 'https://app.utrsports.net/',
-                    },
-                )
+                resp = self.fetch(self.EVENTS_API, params=params)
                 if resp.status_code == 401 or resp.status_code == 403:
                     logger.warning('UTR API requires auth (status %s) — stopping. Add API key to config.', resp.status_code)
                     break

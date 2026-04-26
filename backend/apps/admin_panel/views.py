@@ -255,6 +255,115 @@ class EditionPatchSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 
+class EditionCreateSerializer(serializers.ModelSerializer):
+    """Serializer for manually creating a tournament edition in the admin panel."""
+    circuit = serializers.CharField(required=True)
+    venue_city = serializers.CharField(required=False, allow_blank=True)
+    venue_state = serializers.CharField(required=False, allow_blank=True, max_length=2)
+
+    class Meta:
+        model = TournamentEdition
+        fields = (
+            'title', 'circuit', 'status', 'start_date', 'end_date',
+            'entry_open_at', 'entry_close_at', 'official_source_url',
+            'base_price_brl', 'is_youth',
+            'venue_city', 'venue_state',
+        )
+
+    def create(self, validated_data):
+        from apps.sources.models import Organization
+        from apps.tournaments.models import Tournament, Venue
+        city = validated_data.pop('venue_city', '')
+        state = validated_data.pop('venue_state', '')
+        circuit = validated_data.pop('circuit')
+
+        # Get or create org for manual entries
+        org, _ = Organization.objects.get_or_create(
+            short_name=circuit,
+            defaults={'name': circuit, 'type': 'platform'},
+        )
+
+        # Get or create the tournament identity
+        import re, unicodedata
+        title = validated_data.get('title', '')
+        slug = re.sub(r'[^a-z0-9]+', '-', unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode().lower()).strip('-')[:200]
+        tournament, _ = Tournament.objects.get_or_create(
+            canonical_slug=slug,
+            defaults={'canonical_name': title, 'organization': org, 'circuit': circuit},
+        )
+
+        # Venue
+        venue = None
+        if city or state:
+            venue, _ = Venue.objects.get_or_create(
+                city=city, state=state,
+                defaults={'name': f'{city} - {state}' if city and state else (city or state)},
+            )
+
+        edition = TournamentEdition.objects.create(
+            tournament=tournament,
+            circuit=circuit,
+            venue=venue,
+            source_name='manual',
+            data_confidence=TournamentEdition.CONFIDENCE_HIGH,
+            is_manual_override=True,
+            season_year=validated_data.get('start_date', date.today()).year if validated_data.get('start_date') else date.today().year,
+            **validated_data,
+        )
+        return edition
+
+
+@api_view(['POST'])
+@permission_classes([IsAdmin])
+def edition_create(request):
+    """
+    Manually create a tournament edition — for COSAT/ITF/UTR entries
+    that cannot be fetched automatically due to connector blocks.
+    """
+    ser = EditionCreateSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    edition = ser.save()
+    from apps.tournaments.serializers import TournamentEditionListSerializer
+    return Response(TournamentEditionListSerializer(edition).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def connector_status(request):
+    """
+    Return status of each registered connector — last run, last status,
+    consecutive failures, and whether it's currently blocked (circuit open).
+    """
+    from django.core.cache import cache
+    from apps.ingestion.connectors import registered_connectors
+
+    result = []
+    sources = {ds.connector_key: ds for ds in DataSource.objects.select_related('organization').all()}
+
+    for key in sorted(registered_connectors().keys()):
+        ds = sources.get(key)
+        cb_open = bool(cache.get(f'asaas:cb:open'))  # reuse pattern for ingestion if added later
+        # Per-connector circuit breaker keys
+        failures_key = f'connector:failures:{key}'
+        open_key = f'connector:open:{key}'
+        is_blocked = bool(cache.get(open_key))
+        consecutive_failures = cache.get(failures_key, 0)
+
+        result.append({
+            'connector_key': key,
+            'enabled': ds.enabled if ds else False,
+            'source_name': ds.source_name if ds else key,
+            'organization': ds.organization.short_name if ds else '—',
+            'last_run_at': ds.last_run_at.isoformat() if ds and ds.last_run_at else None,
+            'last_run_status': ds.last_run_status if ds else None,
+            'is_blocked': is_blocked,
+            'consecutive_failures': consecutive_failures,
+            'action': 'Curar manualmente' if is_blocked else ('Ingerir' if ds and ds.enabled else 'Desativado'),
+        })
+
+    return Response(result)
+
+
 @api_view(['PATCH'])
 @permission_classes([IsAdmin])
 def edition_patch(request, pk):

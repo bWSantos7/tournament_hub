@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,7 @@ import { AppText, Button, Card, EmptyState, LoadingBlock, Screen, SectionHeader 
 import api, { extractApiError } from '../../services/api';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'AdminPanel'>;
-type Tab = 'dashboard' | 'review' | 'sources' | 'stats' | 'users';
+type Tab = 'dashboard' | 'review' | 'sources' | 'stats' | 'users' | 'connectors';
 
 interface Dashboard {
   counts: {
@@ -82,11 +82,12 @@ export function AdminPanelScreen({ navigation }: Props) {
   const [tab, setTab] = useState<Tab>('dashboard');
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'dashboard', label: 'Dashboard' },
-    { key: 'review', label: 'Curadoria' },
-    { key: 'sources', label: 'Fontes' },
-    { key: 'stats', label: 'Stats' },
-    { key: 'users', label: 'Usuários' },
+    { key: 'dashboard',  label: 'Dashboard' },
+    { key: 'connectors', label: 'Conectores' },
+    { key: 'review',     label: 'Curadoria' },
+    { key: 'sources',    label: 'Fontes' },
+    { key: 'stats',      label: 'Stats' },
+    { key: 'users',      label: 'Usuários' },
   ];
 
   return (
@@ -115,11 +116,12 @@ export function AdminPanelScreen({ navigation }: Props) {
         ))}
       </View>
 
-      {tab === 'dashboard' && <DashboardTab />}
-      {tab === 'review'    && <ReviewTab />}
-      {tab === 'sources'   && <SourcesTab />}
-      {tab === 'stats'     && <StatsTab />}
-      {tab === 'users'     && <UsersTab />}
+      {tab === 'dashboard'  && <DashboardTab />}
+      {tab === 'connectors' && <ConnectorsTab />}
+      {tab === 'review'     && <ReviewTab />}
+      {tab === 'sources'    && <SourcesTab />}
+      {tab === 'stats'      && <StatsTab />}
+      {tab === 'users'      && <UsersTab />}
     </Screen>
   );
 }
@@ -588,6 +590,206 @@ function EditUserModal({ user, onClose, onSaved }: { user: AdminUser; onClose: (
         </View>
       </View>
     </View>
+  );
+}
+
+// ─── Connectors Tab ───────────────────────────────────────────────────────────
+
+interface ConnectorStatus {
+  connector_key: string;
+  enabled: boolean;
+  source_name: string;
+  organization: string;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  is_blocked: boolean;
+  consecutive_failures: number;
+  action: string;
+}
+
+interface ManualEditionForm {
+  title: string;
+  circuit: string;
+  start_date: string;
+  end_date: string;
+  entry_close_at: string;
+  official_source_url: string;
+  venue_city: string;
+  venue_state: string;
+  status: string;
+}
+
+function ConnectorsTab() {
+  const { colors } = useTheme();
+  const [connectors, setConnectors] = useState<ConnectorStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<ManualEditionForm>({
+    title: '', circuit: 'COSAT', start_date: '', end_date: '',
+    entry_close_at: '', official_source_url: '', venue_city: '', venue_state: '',
+    status: 'open',
+  });
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await api.get<ConnectorStatus[]>('/api/admin-panel/connector-status/');
+      setConnectors(res.data);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao carregar conectores', text2: extractApiError(err) });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function unblockConnector(key: string) {
+    // Trigger a forced run which will reset the circuit if successful
+    try {
+      const source = connectors.find(c => c.connector_key === key);
+      if (!source) return;
+      Toast.show({ type: 'info', text1: 'Tentando reconectar...' });
+      await api.post('/api/ingestion/runs/run-all/');
+      setTimeout(load, 3000);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro', text2: extractApiError(err) });
+    }
+  }
+
+  async function saveManual() {
+    if (!form.title.trim()) { Alert.alert('Erro', 'Título obrigatório.'); return; }
+    if (!form.start_date) { Alert.alert('Erro', 'Data de início obrigatória.'); return; }
+    setSaving(true);
+    try {
+      await api.post('/api/admin-panel/editions/', form);
+      Toast.show({ type: 'success', text1: 'Torneio criado com sucesso!' });
+      setShowForm(false);
+      setForm({ title: '', circuit: 'COSAT', start_date: '', end_date: '', entry_close_at: '', official_source_url: '', venue_city: '', venue_state: '', status: 'open' });
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro ao criar torneio', text2: extractApiError(err) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const blocked = connectors.filter(c => c.is_blocked || (!c.enabled && c.consecutive_failures > 0));
+  const healthy = connectors.filter(c => !c.is_blocked && (c.enabled || c.consecutive_failures === 0));
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <Button title="Atualizar" variant="secondary" onPress={load} style={{ marginBottom: 12 }} />
+
+      {/* Blocked connectors */}
+      {blocked.length > 0 && (
+        <View style={{ backgroundColor: '#ef444418', borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#ef444444' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Ionicons name="warning" size={18} color="#ef4444" />
+            <AppText variant="body" style={{ fontWeight: '700', color: '#ef4444' }}>
+              {blocked.length} conector{blocked.length > 1 ? 'es' : ''} bloqueado{blocked.length > 1 ? 's' : ''}
+            </AppText>
+          </View>
+          {blocked.map((c) => (
+            <View key={c.connector_key} style={{ backgroundColor: colors.bgCard, borderRadius: 10, padding: 12, marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View>
+                  <AppText variant="body" style={{ fontWeight: '700', fontSize: 13 }}>{c.organization} ({c.connector_key})</AppText>
+                  <AppText variant="muted" style={{ fontSize: 11 }}>
+                    {c.consecutive_failures} falhas consecutivas
+                    {c.last_run_at ? ` • Último: ${new Date(c.last_run_at).toLocaleDateString('pt-BR')}` : ''}
+                  </AppText>
+                </View>
+                <Pressable onPress={() => unblockConnector(c.connector_key)}
+                  style={{ backgroundColor: `${colors.accentBlue}20`, padding: 6, borderRadius: 8 }}>
+                  <Ionicons name="refresh" size={16} color={colors.accentBlue} />
+                </Pressable>
+              </View>
+            </View>
+          ))}
+          <AppText variant="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Enquanto bloqueados, crie os torneios manualmente abaixo.
+          </AppText>
+        </View>
+      )}
+
+      {/* Healthy connectors */}
+      <AppText variant="section" style={{ marginBottom: 8 }}>Conectores ativos</AppText>
+      {loading ? <AppText variant="muted">Carregando...</AppText> : healthy.map((c) => (
+        <View key={c.connector_key} style={{ backgroundColor: colors.bgCard, borderRadius: 12, padding: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.enabled ? '#39ff14' : '#6b7280' }} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="body" style={{ fontWeight: '600', fontSize: 13 }}>{c.organization}</AppText>
+            <AppText variant="muted" style={{ fontSize: 10 }}>{c.connector_key} • {c.last_run_status || 'nunca executado'}</AppText>
+          </View>
+          {c.last_run_at && (
+            <AppText variant="muted" style={{ fontSize: 10 }}>{new Date(c.last_run_at).toLocaleDateString('pt-BR')}</AppText>
+          )}
+        </View>
+      ))}
+
+      {/* Manual entry form */}
+      <View style={{ marginTop: 16 }}>
+        <Pressable
+          onPress={() => setShowForm(!showForm)}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.bgCard, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.borderSubtle }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="add-circle-outline" size={20} color={colors.accentNeon} />
+            <AppText variant="body" style={{ fontWeight: '700' }}>Adicionar torneio manualmente</AppText>
+          </View>
+          <Ionicons name={showForm ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+        </Pressable>
+
+        {showForm && (
+          <View style={{ backgroundColor: colors.bgCard, borderRadius: 12, padding: 16, marginTop: 4, gap: 10 }}>
+            <AppText variant="caption" style={{ color: colors.textMuted, fontSize: 11 }}>
+              Use para adicionar torneios COSAT/ITF/UTR quando o conector estiver bloqueado.
+            </AppText>
+
+            {[
+              { label: 'Título do torneio *', key: 'title', placeholder: 'Ex: Copa COSAT Juvenil 2026' },
+              { label: 'Link oficial', key: 'official_source_url', placeholder: 'https://...' },
+              { label: 'Cidade', key: 'venue_city', placeholder: 'São Paulo' },
+              { label: 'Estado (UF)', key: 'venue_state', placeholder: 'SP', maxLength: 2 },
+              { label: 'Data início (YYYY-MM-DD) *', key: 'start_date', placeholder: '2026-06-01' },
+              { label: 'Data fim (YYYY-MM-DD)', key: 'end_date', placeholder: '2026-06-07' },
+              { label: 'Prazo inscrição (YYYY-MM-DD)', key: 'entry_close_at', placeholder: '2026-05-25' },
+            ].map(({ label, key, placeholder, maxLength }) => (
+              <View key={key}>
+                <AppText variant="caption" style={{ marginBottom: 4, fontSize: 12 }}>{label}</AppText>
+                <TextInput
+                  style={{ backgroundColor: colors.bgElevated, borderRadius: 8, padding: 10, color: colors.textPrimary, fontSize: 13 }}
+                  placeholder={placeholder}
+                  placeholderTextColor={colors.textMuted}
+                  value={(form as any)[key]}
+                  onChangeText={(v) => setForm({ ...form, [key]: maxLength ? v.slice(0, maxLength).toUpperCase() : v })}
+                  autoCapitalize="none"
+                  maxLength={maxLength}
+                />
+              </View>
+            ))}
+
+            <View>
+              <AppText variant="caption" style={{ marginBottom: 4, fontSize: 12 }}>Circuito</AppText>
+              <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                {['COSAT', 'ITF', 'UTR', 'CBT', 'FPT', 'Outro'].map((c) => (
+                  <Pressable key={c} onPress={() => setForm({ ...form, circuit: c })}
+                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: form.circuit === c ? colors.accentNeon : colors.bgElevated }}>
+                    <AppText variant="caption" style={{ color: form.circuit === c ? colors.bgBase : colors.textSecondary, fontWeight: '600' }}>{c}</AppText>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <Button title="Cancelar" variant="secondary" onPress={() => setShowForm(false)} />
+              <Button title="Criar torneio" onPress={saveManual} loading={saving} />
+            </View>
+          </View>
+        )}
+      </View>
+    </ScrollView>
   );
 }
 
