@@ -1,4 +1,12 @@
 import api from './api';
+import type {
+  Plan,
+  Subscription,
+  Payment,
+  FeatureAccess,
+  CheckoutPayload,
+  CheckoutResponse,
+} from '../types/billing';
 export type {
   Plan,
   PlanFeature,

@@ -140,11 +140,11 @@ export function TournamentCard({
             </View>
           ) : null}
 
-          {showEligibility && edition.eligibility?.compatible_count > 0 ? (
+          {showEligibility && (edition.eligibility?.compatible_count ?? 0) > 0 ? (
             <View style={[styles.eligBadge, { backgroundColor: `${colors.accentNeon}12`, borderColor: `${colors.accentNeon}30` }]}>
               <Ionicons name="checkmark-circle" size={12} color={colors.accentNeon} />
               <AppText variant="caption" style={{ color: colors.accentNeon, fontWeight: '700', fontSize: 11 }}>
-                {edition.eligibility.compatible_count} compat.
+                {edition.eligibility!.compatible_count} compat.
               </AppText>
             </View>
           ) : null}

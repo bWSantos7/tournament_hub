@@ -17,6 +17,7 @@ import { MainStackParamList } from '../../navigation/types';
 import { checkout, CheckoutPayload } from '../../services/billing';
 import { tokenizeCard, getAsaasCustomerId } from '../../services/asaas';
 import api from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 type CheckoutRouteProp = RouteProp<MainStackParamList, 'Checkout'>;
 type Nav = NativeStackNavigationProp<MainStackParamList>;
@@ -49,6 +50,7 @@ export function CheckoutScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<CheckoutRouteProp>();
   const { plan, billingPeriod } = route.params;
+  const { user } = useAuth();
 
   const [method, setMethod] = useState<PaymentMethod>('pix');
   const [loading, setLoading] = useState(false);
@@ -62,19 +64,6 @@ export function CheckoutScreen() {
   const [cep, setCep]                 = useState('');
 
   const price = billingPeriod === 'yearly' ? plan.price_yearly : plan.price_monthly;
-
-  function buildCardPayload(): Partial<CheckoutPayload> {
-    const [expiryMonth, expiryYear] = expiry.split('/');
-    return {
-      card_holder_name:  cardName.trim(),
-      card_number:       cardNumber.replace(/\s/g, ''),
-      card_expiry_month: expiryMonth,
-      card_expiry_year:  expiryYear ? `20${expiryYear}` : '',
-      card_ccv:          ccv,
-      card_cpf:          cpf.replace(/\D/g, ''),
-      card_postal_code:  cep.replace(/\D/g, ''),
-    };
-  }
 
   function validateCard(): string | null {
     if (!cardName.trim())               return 'Informe o nome no cartão.';
@@ -132,7 +121,7 @@ export function CheckoutScreen() {
             },
             {
               name:       cardName.trim(),
-              email:      '',  // filled from user profile
+              email:      user?.email || '',
               cpfCnpj:    cpf.replace(/\D/g, ''),
               postalCode: cep.replace(/\D/g, ''),
             },

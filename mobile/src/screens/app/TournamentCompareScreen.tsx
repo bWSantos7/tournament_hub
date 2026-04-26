@@ -120,7 +120,7 @@ export function TournamentCompareScreen() {
       {FIELD_ROWS.map((row, idx) => (
         <View
           key={row.key}
-          style={[styles.dataRow, { backgroundColor: idx % 2 === 0 ? colors.bgSurface : colors.bgBase }]}
+          style={[styles.dataRow, { backgroundColor: idx % 2 === 0 ? colors.bgSubtle : colors.bgBase }]}
         >
           <Text style={[styles.labelText, { color: colors.textMuted }]}>{row.label}</Text>
           {loaded.map((d) => (
@@ -132,7 +132,7 @@ export function TournamentCompareScreen() {
       ))}
 
       {/* Categories breakdown */}
-      <View style={[styles.sectionHeader, { backgroundColor: colors.bgSurface }]}>
+      <View style={[styles.sectionHeader, { backgroundColor: colors.bgSubtle }]}>
         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Categorias</Text>
       </View>
       <View style={styles.headerRow}>
@@ -150,7 +150,7 @@ export function TournamentCompareScreen() {
       </View>
 
       {/* Official links */}
-      <View style={[styles.sectionHeader, { backgroundColor: colors.bgSurface }]}>
+      <View style={[styles.sectionHeader, { backgroundColor: colors.bgSubtle }]}>
         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Links oficiais</Text>
       </View>
       <View style={styles.headerRow}>

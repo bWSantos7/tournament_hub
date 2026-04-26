@@ -50,6 +50,7 @@ export async function toggleWatchlist(editionId: number, profileId?: number) {
 export async function deleteWatch(id: number) {
   return api.delete(`/api/watchlist/${id}/`);
 }
+export const removeWatchlist = deleteWatch;
 export async function updateWatch(id: number, patch: Partial<WatchlistItem>) {
   const res = await api.patch<WatchlistItem>(`/api/watchlist/${id}/`, patch);
   return res.data;

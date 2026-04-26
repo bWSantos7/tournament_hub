@@ -93,7 +93,7 @@ export function WatchlistScreen(_: Props) {
     haptic.warning();
     Alert.alert(
       'Remover da agenda',
-      `Remover "${item.edition_detail.title || item.edition_detail.tournament?.name || 'este torneio'}" da sua agenda?`,
+      `Remover "${item.edition_detail.title || item.edition_detail.tournament_name || 'este torneio'}" da sua agenda?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {

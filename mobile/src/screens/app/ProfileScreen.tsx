@@ -415,7 +415,7 @@ function ProfileEditor({ profile, onSaved, onCancel }: { profile: PlayerProfile;
         keyboardType="number-pad"
         placeholder="Ex: 1990"
       />
-      <SelectField label="Gênero" value={form.gender} options={GENDER_OPTIONS} onSelect={(v) => setForm({ ...form, gender: v })} />
+      <SelectField label="Gênero" value={form.gender} options={GENDER_OPTIONS} onSelect={(v) => setForm({ ...form, gender: v as 'M' | 'F' | '' })} />
       <SelectField
         label="Estado (UF)"
         value={form.home_state}
@@ -437,7 +437,7 @@ function ProfileEditor({ profile, onSaved, onCancel }: { profile: PlayerProfile;
         options={RADIUS_OPTIONS}
         onSelect={(v) => setForm({ ...form, travel_radius_km: v })}
       />
-      <SelectField label="Nível competitivo" value={form.competitive_level} options={LEVEL_OPTIONS} onSelect={(v) => setForm({ ...form, competitive_level: v })} />
+      <SelectField label="Nível competitivo" value={form.competitive_level} options={LEVEL_OPTIONS} onSelect={(v) => setForm({ ...form, competitive_level: v as PlayerProfile['competitive_level'] })} />
       <SelectField label="Classe" value={form.tennis_class} options={CLASS_OPTIONS} onSelect={(v) => setForm({ ...form, tennis_class: v })} />
       <Button title="Salvar alterações" onPress={save} loading={saving} />
       <Button title="Cancelar" variant="ghost" onPress={onCancel} />
