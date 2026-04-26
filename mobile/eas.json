@@ -11,6 +11,18 @@
         "EXPO_PUBLIC_API_BASE_URL": "http://localhost:8000"
       }
     },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-staging.tennis.app.br"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
+      }
+    },
     "preview": {
       "distribution": "internal",
       "env": {
