@@ -71,14 +71,9 @@ class CheckoutSerializer(serializers.Serializer):
     payment_method = serializers.ChoiceField(
         choices=['credit_card', 'pix', 'debit_card'], default='pix'
     )
-    card_token        = serializers.CharField(required=False, allow_blank=True, default='')
-    card_holder_name  = serializers.CharField(required=False, allow_blank=True, default='')
-    card_number       = serializers.CharField(required=False, allow_blank=True, default='')
-    card_expiry_month = serializers.CharField(required=False, allow_blank=True, default='')
-    card_expiry_year  = serializers.CharField(required=False, allow_blank=True, default='')
-    card_ccv          = serializers.CharField(required=False, allow_blank=True, default='')
-    card_cpf          = serializers.CharField(required=False, allow_blank=True, default='')
-    card_postal_code  = serializers.CharField(required=False, allow_blank=True, default='')
+    # PCI-DSS: backend only accepts a tokenized card reference, NEVER raw card data.
+    # Client-side tokenization is performed directly with Asaas from the mobile device.
+    card_token = serializers.CharField(required=False, allow_blank=True, default='')
 
 
 class CancelSubscriptionSerializer(serializers.Serializer):

@@ -1,22 +1,49 @@
 """
 Asaas Payment Gateway Service
 ==============================
-Stub implementation — all methods are fully structured and ready for production.
-To activate: set ASAAS_API_KEY in environment variables.
+Production-ready implementation with:
+- Exponential backoff retry (1s/2s/4s) on network errors
+- Circuit breaker: opens after 5 consecutive failures, resets after 60s
+- hmac.compare_digest for webhook token validation
+- PCI-DSS: backend only accepts card_token, never raw card data
 
 Asaas docs: https://docs.asaas.com/reference/
-
 Sandbox:    https://sandbox.asaas.com
 Production: https://api.asaas.com
 """
 import logging
+import time
 from decimal import Decimal
 from typing import Optional
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger('apps.billing.asaas')
+
+# ── Circuit Breaker ─────────────────────────────────────────────────────────────
+_CB_FAILURES_KEY = 'asaas:cb:failures'
+_CB_OPEN_KEY     = 'asaas:cb:open'
+_CB_THRESHOLD    = 5   # open after N consecutive failures
+_CB_RESET_TTL    = 60  # seconds before circuit resets
+
+
+def _cb_is_open() -> bool:
+    return bool(cache.get(_CB_OPEN_KEY))
+
+
+def _cb_record_failure():
+    failures = cache.get(_CB_FAILURES_KEY, 0) + 1
+    cache.set(_CB_FAILURES_KEY, failures, _CB_RESET_TTL * 2)
+    if failures >= _CB_THRESHOLD:
+        cache.set(_CB_OPEN_KEY, True, _CB_RESET_TTL)
+        logger.error('Asaas circuit breaker OPENED after %d failures — pausing for %ds', failures, _CB_RESET_TTL)
+
+
+def _cb_record_success():
+    cache.delete(_CB_FAILURES_KEY)
+    cache.delete(_CB_OPEN_KEY)
 
 
 def _base_url() -> str:
@@ -41,10 +68,13 @@ def _is_configured() -> bool:
 
 def _request(method: str, path: str, _retries: int = 3, **kwargs):
     """
-    Generic HTTP call to Asaas API with exponential backoff retry.
-    Retries on network errors and 5xx responses. Never retries 4xx (client errors).
+    Generic HTTP call to Asaas API with:
+    - Circuit breaker (opens after 5 failures, resets after 60s)
+    - Exponential backoff retry (1s/2s/4s) on network errors
+    - No retry on 4xx (client errors)
     """
-    import time as _time
+    if _cb_is_open():
+        raise AsaasAPIError('Asaas circuit breaker is open — service temporarily paused. Try again shortly.')
 
     if not _is_configured():
         raise AsaasNotConfiguredError(
@@ -56,13 +86,9 @@ def _request(method: str, path: str, _retries: int = 3, **kwargs):
     for attempt in range(_retries):
         try:
             response = requests.request(
-                method,
-                url,
-                headers=_headers(),
-                timeout=30,
-                **kwargs,
+                method, url, headers=_headers(), timeout=30, **kwargs,
             )
-            # 4xx = client error — don't retry
+            # 4xx = client error — don't retry, don't trip circuit breaker
             if 400 <= response.status_code < 500:
                 body = {}
                 try:
@@ -73,6 +99,7 @@ def _request(method: str, path: str, _retries: int = 3, **kwargs):
                 raise AsaasAPIError(f'Asaas returned {response.status_code}', body)
 
             response.raise_for_status()
+            _cb_record_success()
             return response.json()
 
         except AsaasAPIError:
@@ -80,13 +107,14 @@ def _request(method: str, path: str, _retries: int = 3, **kwargs):
 
         except requests.RequestException as exc:
             last_exc = exc
+            _cb_record_failure()
             if attempt < _retries - 1:
                 wait = 2 ** attempt  # 1s, 2s, 4s
                 logger.warning(
                     'Asaas request failed (attempt %d/%d), retrying in %ds: %s %s — %s',
                     attempt + 1, _retries, wait, method, path, exc,
                 )
-                _time.sleep(wait)
+                time.sleep(wait)
             else:
                 logger.exception('Asaas request failed after %d attempts: %s %s', _retries, method, path)
 

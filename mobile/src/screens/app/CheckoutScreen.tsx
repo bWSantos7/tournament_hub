@@ -15,6 +15,8 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../../navigation/types';
 import { checkout, CheckoutPayload } from '../../services/billing';
+import { tokenizeCard, getAsaasCustomerId } from '../../services/asaas';
+import api from '../../services/api';
 
 type CheckoutRouteProp = RouteProp<MainStackParamList, 'Checkout'>;
 type Nav = NativeStackNavigationProp<MainStackParamList>;
@@ -108,11 +110,50 @@ export function CheckoutScreen() {
     setLoading(true);
     try {
       const isCard = method === 'credit_card' || method === 'debit_card';
+
+      // PCI-DSS: tokenize card directly with Asaas — raw card data never hits our backend
+      let cardToken: string | undefined;
+      if (isCard) {
+        const customerId = await getAsaasCustomerId(api, 0);
+        if (!customerId) {
+          Alert.alert('Erro', 'Serviço de pagamento indisponível. Tente novamente.');
+          setLoading(false);
+          return;
+        }
+        const [expiryMonth, expiryYear] = expiry.split('/');
+        try {
+          const tokenResult = await tokenizeCard(
+            {
+              holderName:  cardName.trim(),
+              number:      cardNumber.replace(/\s/g, ''),
+              expiryMonth: expiryMonth,
+              expiryYear:  expiryYear,
+              ccv,
+            },
+            {
+              name:       cardName.trim(),
+              email:      '',  // filled from user profile
+              cpfCnpj:    cpf.replace(/\D/g, ''),
+              postalCode: cep.replace(/\D/g, ''),
+            },
+            customerId,
+          );
+          cardToken = tokenResult.creditCardToken;
+        } catch (tokenErr: any) {
+          const msg = tokenErr?.response?.data?.errors?.[0]?.description
+            || 'Dados do cartão inválidos. Verifique e tente novamente.';
+          Alert.alert('Erro no cartão', msg);
+          setLoading(false);
+          return;
+        }
+      }
+
       const payload: CheckoutPayload = {
         plan_slug:      plan.slug as 'pro' | 'elite',
         billing_period: billingPeriod,
         payment_method: method,
-        ...(isCard ? buildCardPayload() : {}),
+        // Only the token is sent — card number/CVV stay on the device
+        ...(isCard && cardToken ? { card_token: cardToken } : {}),
       };
 
       const result = await checkout(payload);

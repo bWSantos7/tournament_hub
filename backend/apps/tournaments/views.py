@@ -21,7 +21,9 @@ from .serializers import (
     TournamentSerializer,
 )
 
-_COMPATIBLE_CACHE_TTL = 300  # 5 minutes
+_COMPATIBLE_CACHE_TTL = 300   # 5 minutes
+_LIST_CACHE_TTL       = 120   # 2 minutes for public tournament list
+_CALENDAR_CACHE_TTL   = 600   # 10 minutes for calendar (changes less often)
 
 
 class TournamentViewSet(viewsets.ReadOnlyModelViewSet):
@@ -127,14 +129,33 @@ class TournamentEditionViewSet(viewsets.ReadOnlyModelViewSet):
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
 
+    def list(self, request, *args, **kwargs):
+        """Override list() to add Redis cache for common queries."""
+        import hashlib, json as _json
+        params = dict(sorted(request.query_params.items()))
+        cache_key = 'tournaments:list:' + hashlib.md5(_json.dumps(params).encode()).hexdigest()
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
+        response = super().list(request, *args, **kwargs)
+        if response.status_code == 200:
+            cache.set(cache_key, response.data, _LIST_CACHE_TTL)
+        return response
+
     @action(detail=False, methods=['get'], throttle_classes=[HeavyUserThrottle])
     def calendar(self, request):
+        cache_key = 'tournaments:calendar'
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
         qs = self.filter_queryset(self.get_queryset()).filter(start_date__isnull=False)
         buckets = defaultdict(list)
         for edition in qs[:500]:
             key = edition.start_date.strftime('%Y-%m')
             buckets[key].append(TournamentEditionListSerializer(edition).data)
-        return Response([{'month': key, 'items': value} for key, value in sorted(buckets.items())])
+        result = [{'month': key, 'items': value} for key, value in sorted(buckets.items())]
+        cache.set(cache_key, result, _CALENDAR_CACHE_TTL)
+        return Response(result)
 
     @action(detail=False, methods=['get'], throttle_classes=[HeavyUserThrottle])
     def compatible(self, request):

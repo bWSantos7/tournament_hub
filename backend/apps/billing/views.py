@@ -132,24 +132,14 @@ def subscription_checkout(request):
                 'boleto': 'BOLETO',
                 'debit_card': 'DEBIT_CARD',
             }
-            card_data = None
-            if d['payment_method'] == 'credit_card' and d.get('card_number'):
-                card_data = {
-                    'holder_name':  d.get('card_holder_name', ''),
-                    'number':       d.get('card_number', ''),
-                    'expiry_month': d.get('card_expiry_month', ''),
-                    'expiry_year':  d.get('card_expiry_year', ''),
-                    'ccv':          d.get('card_ccv', ''),
-                    'cpf':          d.get('card_cpf', ''),
-                    'postal_code':  d.get('card_postal_code', ''),
-                }
+            # PCI-DSS: only card_token accepted — raw card data is tokenized
+            # client-side by the mobile app directly with Asaas.
             asaas_result = create_subscription(
                 user=request.user,
                 plan=plan,
                 billing_period=d['billing_period'],
                 payment_method=payment_method_map[d['payment_method']],
                 card_token=d.get('card_token', ''),
-                card_data=card_data,
             )
             sub.asaas_subscription_id = asaas_result.get('id', '')
             sub.status = Subscription.STATUS_PENDING
@@ -485,6 +475,25 @@ def _user_from_external_ref(ref: str):
         return User.objects.get(pk=int(ref))
     except (User.DoesNotExist, ValueError, TypeError):
         return None
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def asaas_customer_id(request):
+    """
+    Return (or create) the Asaas customer ID for the authenticated user.
+    Used by the mobile app for PCI-compliant client-side card tokenization.
+    The mobile sends raw card data directly to Asaas, never through our backend.
+    """
+    from .services.asaas_service import get_or_create_customer, AsaasNotConfiguredError
+    try:
+        cid = get_or_create_customer(request.user)
+        return Response({'customer_id': cid})
+    except AsaasNotConfiguredError:
+        return Response({'customer_id': None, 'detail': 'Asaas not configured'})
+    except Exception as exc:
+        logger.error('Failed to get/create Asaas customer for user %s: %s', request.user.id, exc)
+        return Response({'customer_id': None, 'detail': 'Service unavailable'}, status=503)
 
 
 def _get_or_create_free_subscription(user):

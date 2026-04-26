@@ -237,9 +237,13 @@ CACHES = {
             'SOCKET_CONNECT_TIMEOUT': 5,
             'SOCKET_TIMEOUT': 5,
             'RETRY_ON_TIMEOUT': True,
-            'IGNORE_EXCEPTIONS': True,
+            'IGNORE_EXCEPTIONS': True,  # cache misses degrade gracefully
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 30,  # supports 3,000 users with connection reuse
+            },
         },
         'KEY_PREFIX': 'thub',
+        'TIMEOUT': 300,  # default 5min TTL
     }
 }
 

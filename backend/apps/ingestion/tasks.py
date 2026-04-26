@@ -94,6 +94,19 @@ def run_source(self, data_source_id: int):
     source.last_run_status = status
     source.save(update_fields=['last_run_at', 'last_run_status', 'updated_at'])
 
+    # Invalidate tournament list caches when new data arrives
+    if created_n > 0 or updated_n > 0:
+        try:
+            from django.core.cache import cache as _cache
+            _cache.delete('tournaments:calendar')
+            # List caches use MD5 keys — use delete_pattern if available, else skip
+            try:
+                _cache.delete_pattern('tournaments:list:*')
+            except AttributeError:
+                pass  # django-redis not configured with delete_pattern
+        except Exception:
+            pass
+
     return {
         'status': status, 'run_id': run.id,
         'fetched': fetched_n, 'created': created_n,

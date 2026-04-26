@@ -10,4 +10,5 @@ urlpatterns = [
     path('payments/',                    views.payment_history,          name='billing_payment_history'),
     path('features/',                    views.my_features,              name='billing_my_features'),
     path('webhooks/asaas/',              views.asaas_webhook,            name='billing_asaas_webhook'),
+    path('asaas-customer-id/',           views.asaas_customer_id,        name='billing_asaas_customer_id'),
 ]
