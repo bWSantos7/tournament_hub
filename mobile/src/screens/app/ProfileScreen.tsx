@@ -199,6 +199,14 @@ export function ProfileScreen(_: Props) {
           </Pressable>
         ) : null}
         <Pressable
+          onPress={() => navigation.navigate('Tabs', { screen: 'Alerts' } as never)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}
+        >
+          <Ionicons name="notifications-outline" size={18} color={colors.textSecondary} />
+          <AppText variant="body">Notificações e alertas</AppText>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+        </Pressable>
+        <Pressable
           onPress={logout}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}
         >

@@ -13,6 +13,20 @@ import { User } from '../../types';
 import { LEVEL_LABELS, TENNIS_CLASS_LABELS } from '../../utils/format';
 import { AppText, Button, Card, Checkbox, Input, Screen, SelectField } from '../../components/ui';
 
+function passwordStrength(pwd: string): { score: number; label: string; color: string } {
+  if (!pwd) return { score: 0, label: '', color: 'transparent' };
+  let score = 0;
+  if (pwd.length >= 8)  score++;
+  if (pwd.length >= 12) score++;
+  if (/[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^A-Za-z0-9]/.test(pwd)) score++;
+  if (score <= 1) return { score, label: 'Fraca', color: '#ef4444' };
+  if (score <= 2) return { score, label: 'Razoável', color: '#f59e0b' };
+  if (score <= 3) return { score, label: 'Boa', color: '#3b82f6' };
+  return { score, label: 'Forte', color: '#39ff14' };
+}
+
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 type Step = 'form' | 'otp' | 'profile';
 
@@ -98,6 +112,7 @@ export function RegisterScreen({ navigation }: Props) {
     if (!form.email.trim()) return Toast.show({ type: 'error', text1: 'Informe seu e-mail' });
     if (!form.phone.trim()) return Toast.show({ type: 'error', text1: 'Informe seu celular' });
     if (!form.password) return Toast.show({ type: 'error', text1: 'Defina uma senha' });
+    if (form.password.length < 8) return Toast.show({ type: 'error', text1: 'A senha precisa ter no mínimo 8 caracteres' });
     if (form.password !== form.password_confirm) return Toast.show({ type: 'error', text1: 'As senhas não conferem' });
     if (!form.accept_terms) return Toast.show({ type: 'error', text1: 'Aceite os termos para continuar' });
     setSubmitting(true);
@@ -167,6 +182,19 @@ export function RegisterScreen({ navigation }: Props) {
             <Input label="E-mail" required value={form.email} onChangeText={(v) => setForm({ ...form, email: v.trim() })} autoCapitalize="none" keyboardType="email-address" placeholder="seu@email.com" />
             <Input label="Celular" required value={form.phone} onChangeText={(v) => setForm({ ...form, phone: v.replace(/\D/g, '') })} keyboardType="phone-pad" placeholder="11999999999" />
             <Input label="Senha" required value={form.password} onChangeText={(v) => setForm({ ...form, password: v })} secureTextEntry placeholder="Mínimo 8 caracteres" />
+            {form.password.length > 0 && (() => {
+              const { score, label, color } = passwordStrength(form.password);
+              return (
+                <View style={{ marginTop: -8, marginBottom: 4, gap: 4 }}>
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
+                    {[1,2,3,4,5].map((i) => (
+                      <View key={i} style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: i <= score ? color : '#374151' }} />
+                    ))}
+                  </View>
+                  <AppText variant="caption" style={{ color, fontSize: 11 }}>{label}</AppText>
+                </View>
+              );
+            })()}
             <Input label="Confirme a senha" required value={form.password_confirm} onChangeText={(v) => setForm({ ...form, password_confirm: v })} secureTextEntry placeholder="Repita a senha" />
 
             <SelectField
