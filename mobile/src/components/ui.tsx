@@ -1,13 +1,45 @@
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
+import React, { useRef, useMemo, useState } from 'react';
+import {
+  ActivityIndicator, Animated, FlatList, KeyboardAvoidingView,
+  Modal, Platform, Pressable, RefreshControl, ScrollView,
+  StyleSheet, Text, TextInput, TextInputProps, View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
+import { haptic } from '../hooks/useHaptic';
 
-export function Screen({ children, scroll = true }: { children: React.ReactNode; scroll?: boolean }) {
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
+export function Screen({
+  children,
+  scroll = true,
+  onRefresh,
+  refreshing = false,
+}: {
+  children: React.ReactNode;
+  scroll?: boolean;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   const { colors } = useTheme();
   const content = scroll ? (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bgBase }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.bgBase }}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accentNeon}
+            colors={[colors.accentNeon]}
+          />
+        ) : undefined
+      }
+    >
       {children}
     </ScrollView>
   ) : (
@@ -16,25 +48,43 @@ export function Screen({ children, scroll = true }: { children: React.ReactNode;
   return <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgBase }}>{content}</SafeAreaView>;
 }
 
+// ─── Card ─────────────────────────────────────────────────────────────────────
+
 export function Card({ children, style }: { children: React.ReactNode; style?: any }) {
   const { colors } = useTheme();
-  return <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle }, style]}>{children}</View>;
+  return (
+    <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle }, style]}>
+      {children}
+    </View>
+  );
 }
 
-export function AppText({ children, variant = 'body', style, numberOfLines }: { children: React.ReactNode; variant?: 'title' | 'section' | 'body' | 'muted' | 'caption'; style?: any; numberOfLines?: number; }) {
+// ─── AppText ──────────────────────────────────────────────────────────────────
+
+export function AppText({
+  children, variant = 'body', style, numberOfLines,
+}: {
+  children: React.ReactNode;
+  variant?: 'title' | 'section' | 'body' | 'muted' | 'caption';
+  style?: any;
+  numberOfLines?: number;
+}) {
   const { colors } = useTheme();
-  const map: any = {
-    title: { fontSize: 26, fontWeight: '700', color: colors.textPrimary },
+  const map: Record<string, object> = {
+    title:   { fontSize: 26, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
     section: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
-    body: { fontSize: 14, color: colors.textPrimary },
-    muted: { fontSize: 13, color: colors.textMuted },
+    body:    { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
+    muted:   { fontSize: 13, color: colors.textMuted },
     caption: { fontSize: 12, color: colors.textSecondary },
   };
   return <Text style={[map[variant], style]} numberOfLines={numberOfLines}>{children}</Text>;
 }
 
+// ─── Input ────────────────────────────────────────────────────────────────────
+
 export function Input({ label, required, style, ...props }: TextInputProps & { label?: string; required?: boolean }) {
   const { colors } = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: 6 }}>
       {label ? (
@@ -45,25 +95,41 @@ export function Input({ label, required, style, ...props }: TextInputProps & { l
       ) : null}
       <TextInput
         placeholderTextColor={colors.textMuted}
-        style={[styles.input, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle, color: colors.textPrimary }, style]}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={[
+          styles.input,
+          {
+            backgroundColor: colors.bgCard,
+            borderColor: focused ? colors.accentNeon : colors.borderSubtle,
+            color: colors.textPrimary,
+            borderWidth: focused ? 1.5 : 1,
+          },
+          style,
+        ]}
         {...props}
       />
     </View>
   );
 }
 
-export function Checkbox({ value, onValueChange, label, sublabel }: {
+// ─── Checkbox ─────────────────────────────────────────────────────────────────
+
+export function Checkbox({
+  value, onValueChange, label, sublabel,
+}: {
   value: boolean;
   onValueChange: (v: boolean) => void;
   label: string;
   sublabel?: React.ReactNode;
 }) {
   const { colors } = useTheme();
+  function handlePress() {
+    haptic.select();
+    onValueChange(!value);
+  }
   return (
-    <Pressable
-      onPress={() => onValueChange(!value)}
-      style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}
-    >
+    <Pressable onPress={handlePress} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
       <View style={{
         width: 22, height: 22, borderRadius: 6, borderWidth: 2,
         borderColor: value ? colors.accentNeon : colors.borderSubtle,
@@ -74,28 +140,75 @@ export function Checkbox({ value, onValueChange, label, sublabel }: {
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <AppText variant="caption" style={{ fontWeight: '600', lineHeight: 18 }}>{label}</AppText>
-        {sublabel ? sublabel : null}
+        {sublabel || null}
       </View>
     </Pressable>
   );
 }
 
-export function Button({ title, onPress, loading, disabled, variant = 'primary', style }: { title: string; onPress?: () => void; loading?: boolean; disabled?: boolean; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; style?: any; }) {
+// ─── Button ───────────────────────────────────────────────────────────────────
+
+export function Button({
+  title, onPress, loading, disabled, variant = 'primary', style,
+}: {
+  title: string;
+  onPress?: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  style?: any;
+}) {
   const { colors } = useTheme();
-  const palette: any = {
-    primary: { bg: colors.accentNeon, border: colors.accentNeon, text: colors.bgBase },
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const palette = {
+    primary:   { bg: colors.accentNeon, border: colors.accentNeon, text: colors.bgBase },
     secondary: { bg: colors.bgCard, border: colors.borderSubtle, text: colors.textPrimary },
-    ghost: { bg: 'transparent', border: 'transparent', text: colors.textSecondary },
-    danger: { bg: colors.bgCard, border: colors.danger, text: colors.danger },
+    ghost:     { bg: 'transparent', border: 'transparent', text: colors.textSecondary },
+    danger:    { bg: colors.bgCard, border: colors.danger, text: colors.danger },
   }[variant];
+
+  function handlePressIn() {
+    Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 60 }).start();
+  }
+  function handlePressOut() {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 40 }).start();
+  }
+  function handlePress() {
+    if (variant === 'danger') haptic.warning();
+    else if (variant === 'primary') haptic.light();
+    else haptic.select();
+    onPress?.();
+  }
+
   return (
-    <Pressable onPress={onPress} disabled={disabled || loading} style={({ pressed }) => [styles.button, { backgroundColor: palette.bg, borderColor: palette.border, opacity: disabled ? 0.55 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }, style]}>
-      {loading ? <ActivityIndicator color={variant === 'primary' ? colors.bgBase : colors.accentNeon} /> : <Text style={{ color: palette.text, fontWeight: '600', fontSize: 15 }}>{title}</Text>}
+    <Pressable
+      onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled || loading}
+    >
+      <Animated.View style={[
+        styles.button,
+        { backgroundColor: palette.bg, borderColor: palette.border, opacity: disabled ? 0.5 : 1, transform: [{ scale }] },
+        style,
+      ]}>
+        {loading
+          ? <ActivityIndicator color={variant === 'primary' ? colors.bgBase : colors.accentNeon} />
+          : <Text style={{ color: palette.text, fontWeight: '700', fontSize: 15 }}>{title}</Text>
+        }
+      </Animated.View>
     </Pressable>
   );
 }
 
-export function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+// ─── SectionHeader ────────────────────────────────────────────────────────────
+
+export function SectionHeader({
+  title, subtitle, action,
+}: {
+  title: string; subtitle?: string; action?: React.ReactNode;
+}) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, marginBottom: 12 }}>
       <View style={{ flex: 1 }}>
@@ -107,16 +220,45 @@ export function SectionHeader({ title, subtitle, action }: { title: string; subt
   );
 }
 
-export function EmptyState({ title, subtitle }: { title: string; subtitle?: string }) {
+// ─── EmptyState ───────────────────────────────────────────────────────────────
+
+export function EmptyState({
+  title, subtitle, icon = 'search-outline', action,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: string;
+  action?: React.ReactNode;
+}) {
+  const { colors } = useTheme();
   return (
-    <Card style={{ alignItems: 'center', paddingVertical: 24 }}>
-      <AppText variant="body" style={{ fontWeight: '600', textAlign: 'center' }}>{title}</AppText>
-      {subtitle ? <AppText variant="muted" style={{ textAlign: 'center', marginTop: 6 }}>{subtitle}</AppText> : null}
-    </Card>
+    <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24 }}>
+      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: `${colors.borderSubtle}`, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+        <Ionicons name={icon as any} size={28} color={colors.textMuted} />
+      </View>
+      <AppText variant="body" style={{ fontWeight: '700', textAlign: 'center', marginBottom: 6 }}>{title}</AppText>
+      {subtitle ? <AppText variant="muted" style={{ textAlign: 'center', lineHeight: 20 }}>{subtitle}</AppText> : null}
+      {action ? <View style={{ marginTop: 16 }}>{action}</View> : null}
+    </View>
   );
 }
 
-export function SelectField({ label, value, options, onSelect, placeholder, loading, searchable, required }: {
+// ─── LoadingBlock ─────────────────────────────────────────────────────────────
+
+export function LoadingBlock() {
+  const { colors } = useTheme();
+  return (
+    <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+      <ActivityIndicator size="large" color={colors.accentNeon} />
+    </View>
+  );
+}
+
+// ─── SelectField ──────────────────────────────────────────────────────────────
+
+export function SelectField({
+  label, value, options, onSelect, placeholder, loading, searchable, required,
+}: {
   label?: string;
   value: string;
   options: { value: string; label: string }[];
@@ -140,7 +282,7 @@ export function SelectField({ label, value, options, onSelect, placeholder, load
   }, [options, query, searchable]);
 
   function handleOpen() {
-    if (!loading) { setQuery(''); setOpen(true); }
+    if (!loading) { setQuery(''); setOpen(true); haptic.select(); }
   }
 
   return (
@@ -156,9 +298,12 @@ export function SelectField({ label, value, options, onSelect, placeholder, load
         style={[styles.input, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
       >
         <Text style={{ color: selected ? colors.textPrimary : colors.textMuted, fontSize: 15, flex: 1 }} numberOfLines={1}>
-          {loading ? 'Carregando...' : (selected ? selected.label : (placeholder || 'Selecione...'))}
+          {loading ? 'Carregando...' : (selected?.label || placeholder || 'Selecione...')}
         </Text>
-        {loading ? <ActivityIndicator size="small" color={colors.textMuted} /> : <Ionicons name="chevron-down" size={16} color={colors.textMuted} />}
+        {loading
+          ? <ActivityIndicator size="small" color={colors.textMuted} />
+          : <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+        }
       </Pressable>
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
@@ -196,7 +341,7 @@ export function SelectField({ label, value, options, onSelect, placeholder, load
                 keyExtractor={(item) => item.value}
                 renderItem={({ item }) => (
                   <Pressable
-                    onPress={() => { onSelect(item.value); setOpen(false); }}
+                    onPress={() => { haptic.select(); onSelect(item.value); setOpen(false); }}
                     style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: `${colors.borderSubtle}60`, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
                   >
                     <Text style={{ color: colors.textPrimary, fontSize: 15, flex: 1 }}>{item.label}</Text>
@@ -218,14 +363,9 @@ export function SelectField({ label, value, options, onSelect, placeholder, load
   );
 }
 
-export function LoadingBlock() {
-  const { colors } = useTheme();
-  return <View style={{ paddingVertical: 32, alignItems: 'center' }}><ActivityIndicator size="large" color={colors.accentNeon} /></View>;
-}
-
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 100, gap: 16 },
-  card: { borderWidth: 1, borderRadius: 20, padding: 16, gap: 10 },
-  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
-  button: { minHeight: 48, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 12 },
+  card:    { borderWidth: 1, borderRadius: 16, padding: 16, gap: 10 },
+  input:   { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15 },
+  button:  { minHeight: 50, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 13 },
 });

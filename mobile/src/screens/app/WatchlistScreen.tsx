@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import Toast from 'react-native-toast-message';
 import { MainStackParamList, MainTabParamList } from '../../navigation/types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { AppText, Card, EmptyState, LoadingBlock, Screen, SectionHeader } from '../../components/ui';
+import { haptic } from '../../hooks/useHaptic';
 import { TournamentCard } from '../../components/TournamentCard';
 import { listWatchlist, watchlistSummary, removeWatchlist } from '../../services/data';
 import { WatchlistItem } from '../../types';
@@ -42,6 +43,7 @@ export function WatchlistScreen(_: Props) {
   const { colors } = useTheme();
   const navigation = useNavigation<StackNav>();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [conflicts, setConflicts] = useState<Set<number>>(new Set());
@@ -72,7 +74,23 @@ export function WatchlistScreen(_: Props) {
     }, []),
   );
 
+  async function onRefresh() {
+    setRefreshing(true);
+    try {
+      const [wl, sm] = await Promise.all([
+        listWatchlist().catch(() => []),
+        watchlistSummary().catch(() => null),
+      ]);
+      const list = wl as WatchlistItem[];
+      setItems(list);
+      setSummary(sm);
+      setConflicts(detectConflicts(list));
+    } catch {}
+    setRefreshing(false);
+  }
+
   function handleRemove(item: WatchlistItem) {
+    haptic.warning();
     Alert.alert(
       'Remover da agenda',
       `Remover "${item.edition_detail.title || item.edition_detail.tournament?.name || 'este torneio'}" da sua agenda?`,
@@ -86,6 +104,7 @@ export function WatchlistScreen(_: Props) {
             try {
               await removeWatchlist(item.id);
               setItems((prev) => prev.filter((i) => i.id !== item.id));
+              haptic.success();
               Toast.show({ type: 'success', text1: 'Removido da agenda.' });
             } catch {
               Toast.show({ type: 'error', text1: 'Erro ao remover da agenda.' });
@@ -99,7 +118,7 @@ export function WatchlistScreen(_: Props) {
   }
 
   return (
-    <Screen>
+    <Screen onRefresh={onRefresh} refreshing={refreshing}>
       <SectionHeader title="Agenda" subtitle="Seus torneios acompanhados" />
 
       {summary ? (

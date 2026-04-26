@@ -1,60 +1,220 @@
-import React from 'react';
-import { Pressable, View } from 'react-native';
+import React, { useRef } from 'react';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TournamentEditionList, TournamentStatus } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
-import { AppText, Card } from './ui';
-import { STATUS_LABELS, fmtBRL, fmtDateRange, fmtRelative } from '../utils/format';
+import { AppText } from './ui';
+import { STATUS_LABELS, fmtBRL, fmtDateRange } from '../utils/format';
+import { haptic } from '../hooks/useHaptic';
 
-function badge(status: TournamentStatus, colors: ReturnType<typeof useTheme>['colors']) {
+function getStatusStyle(status: TournamentStatus, colors: ReturnType<typeof useTheme>['colors']) {
   switch (status) {
-    case 'open': return { bg: `${colors.statusOpen}22`, border: `${colors.statusOpen}55`, text: colors.statusOpen };
-    case 'closing_soon': return { bg: `${colors.statusClosing}22`, border: `${colors.statusClosing}55`, text: colors.statusClosing };
-    case 'closed': return { bg: `${colors.statusClosed}22`, border: `${colors.statusClosed}55`, text: colors.statusClosed };
-    case 'draws_published': return { bg: `${colors.statusDrawn}22`, border: `${colors.statusDrawn}55`, text: colors.statusDrawn };
-    case 'in_progress': return { bg: `${colors.statusProgress}22`, border: `${colors.statusProgress}55`, text: colors.statusProgress };
-    case 'finished': return { bg: `${colors.statusFinished}22`, border: `${colors.statusFinished}55`, text: colors.statusFinished };
-    case 'canceled': return { bg: `${colors.statusCanceled}22`, border: `${colors.statusCanceled}55`, text: colors.statusCanceled };
-    default: return { bg: colors.bgElevated, border: colors.borderSubtle, text: colors.textMuted };
+    case 'open':            return { color: colors.statusOpen,     icon: 'checkmark-circle' as const };
+    case 'closing_soon':    return { color: colors.statusClosing,  icon: 'alarm' as const };
+    case 'closed':          return { color: colors.statusClosed,   icon: 'lock-closed' as const };
+    case 'draws_published': return { color: colors.statusDrawn,    icon: 'git-branch' as const };
+    case 'in_progress':     return { color: colors.statusProgress, icon: 'play-circle' as const };
+    case 'finished':        return { color: colors.statusFinished, icon: 'checkmark-done' as const };
+    case 'canceled':        return { color: colors.statusCanceled, icon: 'close-circle' as const };
+    default:                return { color: colors.textMuted,      icon: 'ellipse' as const };
   }
 }
 
-export function TournamentCard({ edition, showEligibility = false, onPress }: { edition: TournamentEditionList; showEligibility?: boolean; onPress?: () => void; }) {
-  const { colors } = useTheme();
-  const status = edition.dynamic_status || edition.status;
-  const b = badge(status, colors);
-  const location = [edition.venue_city, edition.venue_state].filter(Boolean).join('/');
+function getDaysUntil(isoDate: string | null | undefined): number | null {
+  if (!isoDate) return null;
+  const diff = new Date(isoDate).getTime() - Date.now();
+  const days = Math.ceil(diff / 86_400_000);
+  return days;
+}
+
+function DeadlineBadge({ daysUntil, colors }: { daysUntil: number; colors: any }) {
+  if (daysUntil < 0) return null;
+  const urgent = daysUntil <= 2;
+  const warning = daysUntil <= 7;
+  const color = urgent ? colors.statusCanceled : warning ? colors.statusClosing : colors.textMuted;
+  const label = daysUntil === 0 ? 'Fecha hoje' : daysUntil === 1 ? 'Fecha amanhã' : `Fecha em ${daysUntil}d`;
   return (
-    <Pressable onPress={onPress} style={{ marginBottom: 10 }}>
-      <Card>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-          <View style={{ flex: 1, gap: 4 }}>
-            <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-              <AppText variant="caption" style={{ color: colors.accentBlue, fontWeight: '700', textTransform: 'uppercase' }}>{edition.organization_short || edition.organization_name}</AppText>
-              {edition.circuit ? <AppText variant="caption">• {edition.circuit}</AppText> : null}
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${color}18`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: `${color}33` }}>
+      <Ionicons name={urgent ? 'alarm' : 'time-outline'} size={11} color={color} />
+      <AppText variant="caption" style={{ color, fontWeight: '700', fontSize: 11 }}>{label}</AppText>
+    </View>
+  );
+}
+
+export function TournamentCard({
+  edition,
+  showEligibility = false,
+  onPress,
+}: {
+  edition: TournamentEditionList;
+  showEligibility?: boolean;
+  onPress?: () => void;
+}) {
+  const { colors } = useTheme();
+  const scale = useRef(new Animated.Value(1)).current;
+  const status = edition.dynamic_status || edition.status;
+  const { color: statusColor, icon: statusIcon } = getStatusStyle(status, colors);
+  const location = [edition.venue_city, edition.venue_state].filter(Boolean).join(' · ');
+  const daysUntil = getDaysUntil(edition.entry_close_at);
+  const showDeadline = daysUntil !== null && daysUntil >= 0 && ['open', 'closing_soon'].includes(status);
+
+  function handlePressIn() {
+    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start();
+  }
+  function handlePressOut() {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
+  }
+  function handlePress() {
+    haptic.light();
+    onPress?.();
+  }
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={{ marginBottom: 10 }}
+    >
+      <Animated.View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.bgCard,
+            borderColor: colors.borderSubtle,
+            transform: [{ scale }],
+          },
+        ]}
+      >
+        {/* Top row: org + status badge */}
+        <View style={styles.topRow}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.orgRow}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusColor }} />
+              <AppText variant="caption" style={{ color: colors.accentBlue, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {edition.organization_short || edition.organization_name}
+              </AppText>
+              {edition.circuit ? (
+                <AppText variant="caption" style={{ color: colors.textMuted }}> · {edition.circuit}</AppText>
+              ) : null}
             </View>
-            <AppText variant="body" style={{ fontWeight: '700', fontSize: 16 }} numberOfLines={2}>{edition.title}</AppText>
+            <AppText variant="body" style={styles.title} numberOfLines={2}>{edition.title}</AppText>
           </View>
-          <View style={{ borderWidth: 1, borderColor: b.border, backgroundColor: b.bg, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' }}>
-            <AppText variant="caption" style={{ color: b.text, fontWeight: '700' }}>{STATUS_LABELS[status] || status}</AppText>
+
+          {/* Status badge */}
+          <View style={[styles.statusBadge, { backgroundColor: `${statusColor}18`, borderColor: `${statusColor}33` }]}>
+            <Ionicons name={statusIcon} size={12} color={statusColor} />
+            <AppText variant="caption" style={{ color: statusColor, fontWeight: '700', fontSize: 11 }}>
+              {STATUS_LABELS[status] || status}
+            </AppText>
           </View>
         </View>
 
-        <View style={{ gap: 6 }}>
-          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-            <AppText variant="caption">{fmtDateRange(edition.start_date, edition.end_date)}</AppText>
-          </View>
-          {location ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Ionicons name="location-outline" size={14} color={colors.textSecondary} /><AppText variant="caption">{location}</AppText></View> : null}
-          {edition.entry_close_at ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Ionicons name="time-outline" size={14} color={colors.statusClosing} /><AppText variant="caption" style={{ color: colors.statusClosing }}>Inscrições até {fmtRelative(edition.entry_close_at)}</AppText></View> : null}
-          {edition.base_price_brl !== null && edition.base_price_brl !== undefined ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Ionicons name="receipt-outline" size={14} color={colors.textPrimary} /><AppText variant="caption">Inscrição {fmtBRL(edition.base_price_brl)}</AppText></View> : null}
+        {/* Info row */}
+        <View style={styles.infoRow}>
+          {edition.start_date ? (
+            <View style={styles.infoItem}>
+              <Ionicons name="calendar-outline" size={13} color={colors.textMuted} />
+              <AppText variant="caption" style={{ color: colors.textSecondary }}>{fmtDateRange(edition.start_date, edition.end_date)}</AppText>
+            </View>
+          ) : null}
+          {location ? (
+            <View style={styles.infoItem}>
+              <Ionicons name="location-outline" size={13} color={colors.textMuted} />
+              <AppText variant="caption" style={{ color: colors.textSecondary }}>{location}</AppText>
+            </View>
+          ) : null}
         </View>
 
-        {showEligibility && edition.eligibility ? <View style={{ flexDirection: 'row', gap: 14, flexWrap: 'wrap' }}>
-          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><Ionicons name="checkmark-circle-outline" size={16} color={colors.accentNeon} /><AppText variant="caption" style={{ color: colors.accentNeon, fontWeight: '600' }}>{edition.eligibility.compatible_count} compatíveis</AppText></View>
-          {edition.eligibility.unknown_count > 0 ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><Ionicons name="ellipse-outline" size={16} color={colors.textMuted} /><AppText variant="caption">{edition.eligibility.unknown_count} a verificar</AppText></View> : null}
-        </View> : null}
-      </Card>
+        {/* Bottom row: deadline badge + price + eligibility */}
+        <View style={styles.bottomRow}>
+          {showDeadline && daysUntil !== null ? (
+            <DeadlineBadge daysUntil={daysUntil} colors={colors} />
+          ) : null}
+
+          {edition.base_price_brl != null ? (
+            <View style={[styles.priceBadge, { backgroundColor: colors.bgElevated, borderColor: colors.borderSubtle }]}>
+              <AppText variant="caption" style={{ color: colors.textSecondary, fontWeight: '600', fontSize: 11 }}>
+                {fmtBRL(edition.base_price_brl)}
+              </AppText>
+            </View>
+          ) : null}
+
+          {showEligibility && edition.eligibility?.compatible_count > 0 ? (
+            <View style={[styles.eligBadge, { backgroundColor: `${colors.accentNeon}12`, borderColor: `${colors.accentNeon}30` }]}>
+              <Ionicons name="checkmark-circle" size={12} color={colors.accentNeon} />
+              <AppText variant="caption" style={{ color: colors.accentNeon, fontWeight: '700', fontSize: 11 }}>
+                {edition.eligibility.compatible_count} compat.
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+      </Animated.View>
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  card: {
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    gap: 10,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  orgRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 4,
+  },
+  title: {
+    fontWeight: '700',
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+    flexShrink: 0,
+  },
+  infoRow: {
+    gap: 5,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  priceBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  eligBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+});

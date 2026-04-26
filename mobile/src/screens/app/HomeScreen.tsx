@@ -9,6 +9,7 @@ import { MainStackParamList, MainTabParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { AppText, Button, EmptyState, LoadingBlock, Screen, SectionHeader } from '../../components/ui';
+import { haptic } from '../../hooks/useHaptic';
 import { TournamentCard } from '../../components/TournamentCard';
 import { listProfiles, unreadAlerts } from '../../services/data';
 import { closingSoon, compatibleForProfile, listEditions } from '../../services/tournaments';
@@ -23,6 +24,7 @@ export function HomeScreen(_: Props) {
   const { user } = useAuth();
   const navigation = useNavigation<StackNav>();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [hasProfile, setHasProfile] = useState(false);
   const [compat, setCompat] = useState<TournamentEditionList[]>([]);
@@ -31,46 +33,53 @@ export function HomeScreen(_: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const hasLoadedRef = useRef(false);
 
+  const loadData = useCallback(async (active = { current: true }) => {
+    try {
+      const [profiles, closingData, recentData, alerts] = await Promise.all([
+        listProfiles().catch(() => []),
+        closingSoon(14).catch(() => []),
+        listEditions({ page_size: 8, ordering: '-created_at' }).catch(() => ({ results: [] } as any)),
+        unreadAlerts().catch(() => []),
+      ]);
+      if (!active.current) return;
+      const primary = pickBestProfile(profiles as PlayerProfile[]);
+      setHasProfile((profiles as PlayerProfile[]).length > 0);
+      setProfile(primary);
+      setClosing((closingData as TournamentEditionList[]).slice(0, 6));
+      const HIDDEN = ['finished', 'canceled'];
+      setRecent(((recentData.results || []) as TournamentEditionList[]).filter((ed) => !HIDDEN.includes(ed.dynamic_status || ed.status)).slice(0, 6));
+      setUnreadCount((alerts || []).length);
+      if (primary) {
+        const compatData = await compatibleForProfile(primary.id, { page_size: 8 }).catch(() => ({ results: [] as TournamentEditionList[] }));
+        if (!active.current) return;
+        setCompat((compatData.results || []).slice(0, 8));
+      }
+      hasLoadedRef.current = true;
+    } catch {
+      Toast.show({ type: 'error', text1: 'Erro ao carregar início' });
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      (async () => {
-        if (!hasLoadedRef.current) setLoading(true);
-        try {
-          const [profiles, closingData, recentData, alerts] = await Promise.all([
-            listProfiles().catch(() => []),
-            closingSoon(14).catch(() => []),
-            listEditions({ page_size: 8, ordering: '-created_at' }).catch(() => ({ results: [] } as any)),
-            unreadAlerts().catch(() => []),
-          ]);
-          if (!active) return;
-          const primary = pickBestProfile(profiles as PlayerProfile[]);
-          setHasProfile((profiles as PlayerProfile[]).length > 0);
-          setProfile(primary);
-          setClosing((closingData as TournamentEditionList[]).slice(0, 6));
-          const HIDDEN_STATUSES = ['finished', 'canceled'];
-          setRecent(((recentData.results || []) as TournamentEditionList[]).filter((ed) => !HIDDEN_STATUSES.includes(ed.dynamic_status || ed.status)).slice(0, 6));
-          setUnreadCount((alerts || []).length);
-          if (primary) {
-            const compatData = await compatibleForProfile(primary.id, { page_size: 8 }).catch(() => ({ results: [] as TournamentEditionList[] }));
-            if (!active) return;
-            setCompat((compatData.results || []).slice(0, 8));
-          }
-          hasLoadedRef.current = true;
-        } catch {
-          Toast.show({ type: 'error', text1: 'Erro ao carregar início' });
-        } finally {
-          if (active) setLoading(false);
-        }
-      })();
-      return () => { active = false; };
-    }, []),
+      const active = { current: true };
+      if (!hasLoadedRef.current) setLoading(true);
+      loadData(active).finally(() => { if (active.current) setLoading(false); });
+      return () => { active.current = false; };
+    }, [loadData]),
   );
+
+  async function onRefresh() {
+    setRefreshing(true);
+    hasLoadedRef.current = false;
+    await loadData();
+    setRefreshing(false);
+  }
 
   if (loading) return <Screen><LoadingBlock /></Screen>;
 
   return (
-    <Screen>
+    <Screen onRefresh={onRefresh} refreshing={refreshing}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View style={{ flex: 1 }}>
           <AppText variant="caption" style={{ color: colors.textMuted }}>Olá,</AppText>
@@ -98,19 +107,52 @@ export function HomeScreen(_: Props) {
 
       {profile ? (
         <View>
-          <SectionHeader title="Compatíveis com você" subtitle="Baseado no seu perfil, categoria e localização" />
-          {compat.length === 0 ? <EmptyState title="Nenhum torneio compatível encontrado ainda." subtitle="Verifique se seu perfil está completo ou aguarde novas ingestões." /> : compat.map((ed) => <TournamentCard key={ed.id} edition={ed} showEligibility onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)}
+          <SectionHeader
+            title="Compatíveis com você"
+            subtitle="Baseado no seu perfil e categoria"
+            action={
+              <Pressable onPress={() => { haptic.select(); navigation.navigate('Tabs', { screen: 'Tournaments' } as never); }}>
+                <AppText variant="caption" style={{ color: colors.accentNeon, fontWeight: '700' }}>Ver todos</AppText>
+              </Pressable>
+            }
+          />
+          {compat.length === 0
+            ? <EmptyState title="Nenhum torneio compatível." subtitle="Complete seu perfil com categoria e classe para ver torneios filtrados para você." icon="trophy-outline" />
+            : compat.map((ed) => <TournamentCard key={ed.id} edition={ed} showEligibility onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)
+          }
         </View>
       ) : null}
 
       <View>
-        <SectionHeader title="Inscrições fechando" subtitle="Próximos 14 dias" />
-        {closing.length === 0 ? <EmptyState title="Nenhum prazo se aproximando." /> : closing.map((ed) => <TournamentCard key={ed.id} edition={ed} onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)}
+        <SectionHeader
+          title="⏰ Inscrições fechando"
+          subtitle="Próximos 14 dias"
+          action={
+            <Pressable onPress={() => { haptic.select(); navigation.navigate('Tabs', { screen: 'Tournaments' } as never); }}>
+              <AppText variant="caption" style={{ color: colors.statusClosing, fontWeight: '700' }}>Ver todos</AppText>
+            </Pressable>
+          }
+        />
+        {closing.length === 0
+          ? <EmptyState title="Nenhum prazo se aproximando." subtitle="Quando torneios estiverem com inscrições abrindo, aparecerão aqui." icon="alarm-outline" />
+          : closing.map((ed) => <TournamentCard key={ed.id} edition={ed} onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)
+        }
       </View>
 
       <View>
-        <SectionHeader title="Recentemente adicionados" subtitle="Últimos torneios agregados pelas fontes" />
-        {recent.length === 0 ? <EmptyState title="Nenhum torneio na base ainda." subtitle="As ingestões acontecem automaticamente a cada hora." /> : recent.map((ed) => <TournamentCard key={ed.id} edition={ed} onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)}
+        <SectionHeader
+          title="Recentemente adicionados"
+          subtitle="Últimos torneios agregados"
+          action={
+            <Pressable onPress={() => { haptic.select(); navigation.navigate('Tabs', { screen: 'Tournaments' } as never); }}>
+              <AppText variant="caption" style={{ color: colors.accentBlue, fontWeight: '700' }}>Ver todos</AppText>
+            </Pressable>
+          }
+        />
+        {recent.length === 0
+          ? <EmptyState title="Nenhum torneio na base ainda." subtitle="As ingestões acontecem automaticamente a cada hora." icon="refresh-outline" />
+          : recent.map((ed) => <TournamentCard key={ed.id} edition={ed} onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)
+        }
       </View>
 
       {/* Circuit Explorer — spec requirement: "Explorar por circuito" */}

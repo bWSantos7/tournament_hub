@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, Switch, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Switch, View } from 'react-native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { Alert } from '../../types';
 import { listAlerts, markAlertRead, markAllAlertsRead } from '../../services/data';
 import { AppText, Button, Card, EmptyState, LoadingBlock, Screen, SectionHeader } from '../../components/ui';
+import { haptic } from '../../hooks/useHaptic';
 import { fmtDateTime } from '../../utils/format';
 import api from '../../services/api';
 
@@ -66,6 +67,7 @@ export function AlertsScreen(_: Props) {
   }
 
   async function readOne(id: number) {
+    haptic.select();
     try {
       await markAlertRead(id);
       setAlerts((prev) => prev.map((a) => a.id === id ? { ...a, status: 'read', read_at: new Date().toISOString() } : a));
@@ -75,6 +77,7 @@ export function AlertsScreen(_: Props) {
   }
 
   async function readAll() {
+    haptic.success();
     try {
       await markAllAlertsRead();
       setAlerts((prev) => prev.map((a) => ({ ...a, status: 'read', read_at: new Date().toISOString() })));

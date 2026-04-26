@@ -26,11 +26,24 @@ export function MainTabs() {
   return (
     <Tab.Navigator screenOptions={({ route }) => ({
       headerShown: false,
-      tabBarStyle: { backgroundColor: colors.bgCard, borderTopColor: colors.borderSubtle, height: 64, paddingTop: 6, paddingBottom: 6 },
+      tabBarStyle: {
+        backgroundColor: colors.bgCard,
+        borderTopColor: colors.borderSubtle,
+        borderTopWidth: 1,
+        height: 68,
+        paddingTop: 8,
+        paddingBottom: 10,
+      },
       tabBarActiveTintColor: colors.accentNeon,
       tabBarInactiveTintColor: colors.textMuted,
-      tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
-      tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? icons[route.name].replace('-outline', '') : icons[route.name]} color={color} size={size} />,
+      tabBarLabelStyle: { fontSize: 10, fontWeight: '700', marginTop: 2 },
+      tabBarIcon: ({ color, size, focused }) => (
+        <Ionicons
+          name={focused ? icons[route.name].replace('-outline', '') : icons[route.name]}
+          color={color}
+          size={focused ? size + 1 : size}
+        />
+      ),
     })}>
       <Tab.Screen name="Home"        component={HomeScreen}        options={{ title: 'Início' }} />
       <Tab.Screen name="Tournaments" component={TournamentsScreen} options={{ title: 'Torneios' }} />
