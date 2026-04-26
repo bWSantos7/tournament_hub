@@ -14,8 +14,8 @@ class RegistrationTestCase(TestCase):
         self.client = APIClient()
 
     @patch('apps.accounts.views.generate_and_store', return_value='123456')
-    @patch('apps.accounts.views._send_mail')
-    def test_register_creates_user(self, mock_mail, mock_otp):
+    @patch('apps.accounts.tasks.send_otp_email.delay')
+    def test_register_creates_user(self, mock_task, mock_otp):
         res = self.client.post('/api/auth/register/', {
             'email': 'test@example.com',
             'password': 'Str0ngPass!',

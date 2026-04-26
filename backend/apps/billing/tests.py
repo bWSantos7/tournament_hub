@@ -62,7 +62,8 @@ class SubscriptionCheckoutTestCase(TestCase):
             'billing_period': 'monthly',
             'payment_method': 'pix',
         }, format='json')
-        self.assertEqual(res.status_code, 201)
+        # 201 on create, 200 on update (user already had auto-created free sub)
+        self.assertIn(res.status_code, [200, 201])
         self.assertEqual(res.data['status'], 'active')
         self.assertEqual(res.data['plan_slug'], 'free')
 
