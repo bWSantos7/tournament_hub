@@ -175,10 +175,10 @@ export function WatchlistScreen(_: Props) {
               <Pressable
                 onPress={() => handleRemove(item)}
                 disabled={removing === item.id}
-                style={{ position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 8, padding: 6, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}
-                hitSlop={8}
+                style={{ position: 'absolute', right: 10, bottom: 18, width: 44, height: 44, backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', alignItems: 'center', justifyContent: 'center' }}
+                hitSlop={10}
               >
-                <Ionicons name={removing === item.id ? 'hourglass-outline' : 'trash-outline'} size={14} color="#ef4444" />
+                <Ionicons name={removing === item.id ? 'hourglass-outline' : 'trash-outline'} size={18} color="#ef4444" />
               </Pressable>
             </View>
           </View>

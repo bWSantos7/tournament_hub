@@ -171,7 +171,7 @@ function DashboardTab() {
   if (!dash) return <EmptyState title="Não foi possível carregar o dashboard." />;
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100, gap: 14 }}>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <Button title="Atualizar" variant="secondary" onPress={load} />
         <Button title={running ? 'Ingerindo...' : 'Ingerir agora'} onPress={runIngestion} loading={running} />
@@ -282,7 +282,7 @@ function StatsTab() {
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 2 }}>
         {[7, 30, 90].map((d) => (
           <Pressable key={d} onPress={() => { setDays(d); load(d); }}
             style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: days === d ? colors.accentNeon : colors.borderSubtle, backgroundColor: days === d ? `${colors.accentNeon}15` : 'transparent' }}>
@@ -291,7 +291,7 @@ function StatsTab() {
         ))}
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
         <View style={{ flex: 1, backgroundColor: colors.bgCard, borderRadius: 16, padding: 12, alignItems: 'center' }}>
           <AppText variant="muted" style={{ fontSize: 10 }}>USUÁRIOS</AppText>
           <AppText variant="title" style={{ color: colors.accentNeon }}>{data.totals.users}</AppText>
@@ -715,7 +715,12 @@ function ConnectorsTab() {
 
       {/* Healthy connectors */}
       <AppText variant="section" style={{ marginBottom: 8 }}>Conectores ativos</AppText>
-      {loading ? <AppText variant="muted">Carregando...</AppText> : healthy.map((c) => (
+      {loading ? <AppText variant="muted">Carregando...</AppText> : healthy.length === 0 ? (
+        <Card>
+          <AppText variant="body" style={{ fontWeight: '700' }}>Nenhum conector ativo encontrado.</AppText>
+          <AppText variant="muted">Quando fontes forem cadastradas ou conectores forem habilitados, eles aparecerão aqui.</AppText>
+        </Card>
+      ) : healthy.map((c) => (
         <View key={c.connector_key} style={{ backgroundColor: colors.bgCard, borderRadius: 12, padding: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.enabled ? '#39ff14' : '#6b7280' }} />
           <View style={{ flex: 1 }}>

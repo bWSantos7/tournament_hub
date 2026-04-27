@@ -19,13 +19,23 @@ export function LoginScreen({ navigation }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit() {
+    if (!email.trim() || !password) {
+      Toast.show({
+        type: 'error',
+        text1: 'Preencha e-mail e senha',
+        text2: 'Os dois campos são obrigatórios para entrar.',
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       const data = await login(email.trim(), password);
       setUser(data.user);
       Toast.show({ type: 'success', text1: 'Bem-vindo de volta!' });
     } catch (err) {
-      Toast.show({ type: 'error', text1: 'Erro ao entrar', text2: extractApiError(err) });
+      const message = extractApiError(err);
+      console.warn('Login failed:', message);
+      Toast.show({ type: 'error', text1: 'Erro ao entrar', text2: message, visibilityTime: 6000 });
     } finally {
       setSubmitting(false);
     }

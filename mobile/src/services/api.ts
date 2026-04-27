@@ -41,11 +41,7 @@ export const storage = {
 function resolveBaseUrl(): string {
   const configured = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
   if (configured) return configured;
-  if (__DEV__) return 'http://localhost:8000';
-  throw new Error(
-    'EXPO_PUBLIC_API_BASE_URL is not set. ' +
-    'Add it to eas.json under the correct build profile env section.',
-  );
+  return 'https://api.tennis.app.br';
 }
 
 export const BASE_URL = resolveBaseUrl();
@@ -127,7 +123,12 @@ export default api;
 export function extractApiError(err: unknown): string {
   const ax = err as AxiosError<Record<string, unknown>>;
   const data = ax.response?.data;
-  if (!data) return ax.message || 'Erro desconhecido';
+  if (!data) {
+    if (ax.request && !ax.response) {
+      return `Não foi possível conectar à API (${BASE_URL}). Verifique internet, VPN e a URL configurada.`;
+    }
+    return ax.message || 'Erro desconhecido';
+  }
   if (typeof data === 'string') return data;
   const detail = (data as Record<string, unknown>).detail;
   if (typeof detail === 'string') return detail;
@@ -136,5 +137,7 @@ export function extractApiError(err: unknown): string {
     if (Array.isArray(v)) parts.push(`${k}: ${v.join(', ')}`);
     else if (typeof v === 'string') parts.push(`${k}: ${v}`);
   }
-  return parts.length ? parts.join(' • ') : ax.message || 'Erro desconhecido';
+  if (parts.length) return parts.join(' • ');
+  if (ax.response?.status) return `Erro ${ax.response.status} ao acessar ${BASE_URL}`;
+  return ax.message || 'Erro desconhecido';
 }

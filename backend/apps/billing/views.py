@@ -95,31 +95,47 @@ def subscription_checkout(request):
         return Response({'detail': 'Plano não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
     with transaction.atomic():
+        initial_plan = plan
+        initial_status = Subscription.STATUS_PENDING
+        if plan.slug != Plan.SLUG_FREE:
+            initial_plan = Plan.objects.filter(slug=Plan.SLUG_FREE).first() or plan
+            initial_status = (
+                Subscription.STATUS_ACTIVE
+                if initial_plan.slug == Plan.SLUG_FREE
+                else Subscription.STATUS_PENDING
+            )
         sub, created = Subscription.objects.get_or_create(
             user=request.user,
             defaults={
-                'plan': plan,
+                'plan': initial_plan,
                 'billing_period': d['billing_period'],
-                'status': Subscription.STATUS_PENDING,
+                'status': initial_status,
                 'start_date': date.today(),
             },
         )
-        if not created:
-            sub.plan = plan
-            sub.billing_period = d['billing_period']
-            sub.cancel_at_period_end = False
-            sub.save(update_fields=['plan', 'billing_period', 'cancel_at_period_end', 'updated_at'])
 
         # Free plan — activate immediately, no payment needed
         if plan.slug == Plan.SLUG_FREE:
+            sub.plan = plan
+            sub.billing_period = d['billing_period']
             sub.status = Subscription.STATUS_ACTIVE
             sub.start_date = date.today()
             sub.next_due_date = None
-            sub.save(update_fields=['status', 'start_date', 'next_due_date', 'updated_at'])
+            sub.pending_plan = None
+            sub.pending_billing_period = ''
+            sub.cancel_at_period_end = False
+            sub.save(update_fields=[
+                'plan', 'billing_period', 'status', 'start_date', 'next_due_date',
+                'pending_plan', 'pending_billing_period', 'cancel_at_period_end', 'updated_at',
+            ])
             _log_action(request.user, 'billing.subscribe_free', f'Subscribed to Free plan')
             return Response(SubscriptionSerializer(sub).data)
 
         # Paid plan — attempt Asaas integration
+        sub.pending_plan = plan
+        sub.pending_billing_period = d['billing_period']
+        sub.cancel_at_period_end = False
+        sub.save(update_fields=['pending_plan', 'pending_billing_period', 'cancel_at_period_end', 'updated_at'])
         asaas_result = None
         pix_qr = None
         try:
@@ -142,8 +158,7 @@ def subscription_checkout(request):
                 card_token=d.get('card_token', ''),
             )
             sub.asaas_subscription_id = asaas_result.get('id', '')
-            sub.status = Subscription.STATUS_PENDING
-            sub.save(update_fields=['asaas_subscription_id', 'status', 'updated_at'])
+            sub.save(update_fields=['asaas_subscription_id', 'updated_at'])
             logger.info('Asaas subscription %s created for user %s', sub.asaas_subscription_id, request.user.id)
 
             # For Pix: fetch QR code from first pending payment
@@ -152,7 +167,6 @@ def subscription_checkout(request):
 
         except Exception as exc:  # AsaasNotConfiguredError or network error
             logger.warning('Asaas not available (%s); subscription created locally.', exc)
-            sub.status = Subscription.STATUS_PENDING
 
         _log_action(request.user, 'billing.checkout', f'Checkout plan={plan.slug} method={d["payment_method"]}')
 
@@ -348,9 +362,11 @@ def _transition_subscription(sub: Subscription, new_status: str, context: str = 
     Returns True if transition was applied, False if rejected.
     """
     allowed = _VALID_TRANSITIONS.get(sub.status, set())
+    if sub.status == new_status:
+        return True
     if new_status not in allowed:
         logger.error(
-            'Invalid subscription transition %s → %s (sub_id=%s) context=%s',
+            'Invalid subscription transition %s -> %s (sub_id=%s) context=%s',
             sub.status, new_status, sub.id, context,
         )
         return False
@@ -387,6 +403,12 @@ def _handle_payment_confirmed(payload: dict):
     )
     if sub and _transition_subscription(sub, Subscription.STATUS_ACTIVE, 'payment_confirmed'):
         from datetime import date as date_cls
+        if sub.pending_plan_id:
+            sub.plan = sub.pending_plan
+            if sub.pending_billing_period:
+                sub.billing_period = sub.pending_billing_period
+            sub.pending_plan = None
+            sub.pending_billing_period = ''
         sub.status = Subscription.STATUS_ACTIVE
         sub.start_date = sub.start_date or date_cls.today()
         if sub.billing_period == 'yearly':
@@ -394,7 +416,10 @@ def _handle_payment_confirmed(payload: dict):
         else:
             from dateutil.relativedelta import relativedelta
             sub.next_due_date = date_cls.today() + relativedelta(months=1)
-        sub.save(update_fields=['status', 'start_date', 'next_due_date', 'updated_at'])
+        sub.save(update_fields=[
+            'plan', 'billing_period', 'pending_plan', 'pending_billing_period',
+            'status', 'start_date', 'next_due_date', 'updated_at',
+        ])
         logger.info('Subscription %s activated after payment confirmed', sub.id)
 
 
@@ -402,6 +427,12 @@ def _handle_payment_overdue(payload: dict):
     p = payload.get('payment', {})
     asaas_sub_id = p.get('subscription', '')
     sub = _find_subscription_by_asaas(asaas_sub_id) if asaas_sub_id else None
+    if sub and sub.pending_plan_id:
+        sub.pending_plan = None
+        sub.pending_billing_period = ''
+        sub.save(update_fields=['pending_plan', 'pending_billing_period', 'updated_at'])
+        Payment.objects.filter(asaas_payment_id=p.get('id', '')).update(status=Payment.STATUS_OVERDUE)
+        return
     if sub and _transition_subscription(sub, Subscription.STATUS_UNPAID, 'payment_overdue'):
         sub.status = Subscription.STATUS_UNPAID
         sub.save(update_fields=['status', 'updated_at'])
@@ -431,6 +462,9 @@ def _handle_payment_chargeback(payload: dict):
 def _handle_subscription_created(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub and sub.pending_plan_id:
+        logger.info('Subscription %s created at Asaas; waiting for payment confirmation', sub.id)
+        return
     if sub and _transition_subscription(sub, Subscription.STATUS_ACTIVE, 'subscription_created'):
         sub.status = Subscription.STATUS_ACTIVE
         sub.save(update_fields=['status', 'updated_at'])
@@ -439,6 +473,9 @@ def _handle_subscription_created(payload: dict):
 def _handle_subscription_updated(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub and sub.pending_plan_id:
+        logger.info('Subscription %s updated at Asaas; waiting for payment confirmation', sub.id)
+        return
     if sub and s.get('status') == 'ACTIVE':
         if _transition_subscription(sub, Subscription.STATUS_ACTIVE, 'subscription_updated'):
             sub.status = Subscription.STATUS_ACTIVE
@@ -448,6 +485,11 @@ def _handle_subscription_updated(payload: dict):
 def _handle_subscription_inactivated(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub and sub.pending_plan_id:
+        sub.pending_plan = None
+        sub.pending_billing_period = ''
+        sub.save(update_fields=['pending_plan', 'pending_billing_period', 'updated_at'])
+        return
     if sub and _transition_subscription(sub, Subscription.STATUS_EXPIRED, 'subscription_inactivated'):
         sub.status = Subscription.STATUS_EXPIRED
         sub.save(update_fields=['status', 'updated_at'])
@@ -456,6 +498,11 @@ def _handle_subscription_inactivated(payload: dict):
 def _handle_subscription_deleted(payload: dict):
     s = payload.get('subscription', {})
     sub = _find_subscription_by_asaas(s.get('id', ''))
+    if sub and sub.pending_plan_id:
+        sub.pending_plan = None
+        sub.pending_billing_period = ''
+        sub.save(update_fields=['pending_plan', 'pending_billing_period', 'updated_at'])
+        return
     if sub and _transition_subscription(sub, Subscription.STATUS_CANCELED, 'subscription_deleted'):
         sub.status = Subscription.STATUS_CANCELED
         sub.canceled_at = timezone.now()

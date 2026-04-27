@@ -17,7 +17,9 @@ from .serializers import (
     FederationEntrySerializer,
     FederationEntryWriteSerializer,
     MyRegistrationSerializer,
+    REGISTRATION_STATUS_LABELS,
     RegistrationCreateSerializer,
+    compute_registration_status,
 )
 
 
@@ -276,6 +278,69 @@ class RegistrationViewSet(viewsets.GenericViewSet):
                 },
                 'entries': FederationEntrySerializer(cat_entries, many=True).data,
             })
+
+        if not result:
+            regs = _annotate_slot_positions(
+                TournamentRegistration.objects
+                .filter(edition=edition, is_withdrawn=False)
+                .select_related('profile', 'category')
+                .order_by(
+                    'category__source_category_text',
+                    F('ranking_position').asc(nulls_last=True),
+                    'registered_at',
+                )
+            )
+            local_grouped = defaultdict(list)
+            for reg in regs:
+                cat_text = reg.category.source_category_text if reg.category else 'Sem categoria específica'
+                local_grouped[cat_text].append(reg)
+
+            for cat_text, cat_regs in local_grouped.items():
+                max_p = cat_regs[0].category.max_participants if cat_regs[0].category else None
+                entries_data = []
+                paid = 0
+                in_draw = 0
+                for reg in cat_regs:
+                    slot = getattr(reg, 'slot_position', None)
+                    is_paid = reg.payment_status in (
+                        TournamentRegistration.PAYMENT_PAID,
+                        TournamentRegistration.PAYMENT_WAIVED,
+                    )
+                    if is_paid:
+                        paid += 1
+                    draw_member = slot is not None and ((max_p is None) or slot <= max_p)
+                    if is_paid and draw_member:
+                        in_draw += 1
+                    status_key = compute_registration_status(reg, slot, max_p)
+                    entries_data.append({
+                        'id': reg.id,
+                        'category_text': cat_text,
+                        'player_name': reg.profile.display_name or 'Atleta inscrito',
+                        'player_external_id': '',
+                        'ranking_position': reg.ranking_position,
+                        'payment_status': 'paid' if is_paid else 'pending',
+                        'payment_status_label': 'Pago' if is_paid else 'Aguardando pagamento',
+                        'source': 'app',
+                        'notes': '',
+                        'synced_at': reg.updated_at,
+                        'slot_position': slot,
+                        'in_draw': draw_member if slot is not None else None,
+                        'status': status_key,
+                        'status_label': REGISTRATION_STATUS_LABELS.get(status_key, ''),
+                    })
+
+                result.append({
+                    'category_text': cat_text,
+                    'max_participants': max_p,
+                    'summary': {
+                        'total': len(cat_regs),
+                        'paid': paid,
+                        'pending': len(cat_regs) - paid,
+                        'in_draw': in_draw,
+                        'waiting_list': max(paid - in_draw, 0),
+                    },
+                    'entries': entries_data,
+                })
 
         return Response({
             'edition_id': edition.id,

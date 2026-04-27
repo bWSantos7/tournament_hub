@@ -1,6 +1,7 @@
 import api from './api';
 import {
   EditionEligibility,
+  Organization,
   Paginated,
   TournamentEditionDetail,
   TournamentEditionList,
@@ -17,6 +18,7 @@ export interface TournamentFilters {
   circuit?: string;
   surface?: string;
   organization?: number;
+  organization_slug?: string;
   near_profile?: number;
   page?: number;
   page_size?: number;
@@ -37,6 +39,14 @@ export async function listEditions(filters: TournamentFilters = {}) {
     `/api/tournaments/editions/${qs(filters as Record<string, unknown>)}`,
   );
   return res.data;
+}
+
+export async function listFederations() {
+  const res = await api.get<Paginated<Organization> | Organization[]>(
+    '/api/sources/organizations/?type=federation&is_active=true&page_size=100',
+  );
+  const d = res.data as Paginated<Organization>;
+  return d.results ?? (res.data as Organization[]);
 }
 
 export async function getEdition(id: number) {

@@ -431,10 +431,10 @@ def execution_logs(request):
             'status': run.status,
             'service': run.data_source.source_name if run.data_source else 'manual',
             'organization': run.data_source.organization.short_name if run.data_source and run.data_source.organization else '—',
-            'editions_found': getattr(run, 'editions_found', 0),
-            'editions_created': getattr(run, 'editions_created', 0),
-            'editions_updated': getattr(run, 'editions_updated', 0),
-            'error': run.error_message if hasattr(run, 'error_message') else (run.notes or ''),
+            'editions_found': run.items_fetched,
+            'editions_created': run.items_created,
+            'editions_updated': run.items_updated,
+            'error': run.error_summary or '',
         })
     return Response(data)
 

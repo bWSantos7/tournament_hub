@@ -53,3 +53,4 @@ scraper_cache/
 logs/*.log
 *.pyc
 .claude
+.tools/

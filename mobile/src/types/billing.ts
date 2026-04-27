@@ -25,6 +25,8 @@ export interface Subscription {
   billing_period: 'monthly' | 'yearly';
   status: 'active' | 'pending' | 'canceled' | 'expired' | 'unpaid' | 'trial';
   is_active: boolean;
+  pending_plan: number | null;
+  pending_billing_period: 'monthly' | 'yearly' | '';
   start_date: string | null;
   next_due_date: string | null;
   cancel_at_period_end: boolean;

@@ -18,8 +18,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { AppText, EmptyState, Input, Screen } from '../../components/ui';
 import { TournamentCard } from '../../components/TournamentCard';
 import { TournamentListSkeleton } from '../../components/Skeleton';
-import { TournamentEditionList } from '../../types';
-import { calendar, listEditions } from '../../services/tournaments';
+import { Organization, TournamentEditionList } from '../../types';
+import { calendar, listEditions, listFederations } from '../../services/tournaments';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Tournaments'>;
 type StackNav = NativeStackNavigationProp<MainStackParamList>;
@@ -44,7 +44,7 @@ const CIRCUIT_FILTERS = [
   { key: 'UTR',   label: 'UTR' },
 ];
 
-export function TournamentsScreen(_: Props) {
+export function TournamentsScreen({ route }: Props) {
   const { colors } = useTheme();
   const navigation = useNavigation<StackNav>();
 
@@ -57,13 +57,15 @@ export function TournamentsScreen(_: Props) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [circuitFilter, setCircuitFilter] = useState('');
+  const [federations, setFederations] = useState<Organization[]>([]);
+  const [federationFilter, setFederationFilter] = useState<number | undefined>(route.params?.organization);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [calMonth, setCalMonth] = useState(() => new Date());
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<number[]>([]);
 
-  async function loadList(q = query, status = statusFilter, circuit = circuitFilter, page = 1) {
+  async function loadList(q = query, status = statusFilter, circuit = circuitFilter, organization = federationFilter, page = 1) {
     if (page === 1) setLoading(true);
     else setLoadingMore(true);
     try {
@@ -73,6 +75,7 @@ export function TournamentsScreen(_: Props) {
         q: q || undefined,
         status: status || undefined,
         circuit: circuit || undefined,
+        organization,
       });
       const results = data.results || [];
       setItems((prev) => page === 1 ? results : [...prev, ...results]);
@@ -88,7 +91,11 @@ export function TournamentsScreen(_: Props) {
   async function loadCalendar() {
     setLoading(true);
     try {
-      const months = await calendar();
+      const months = await calendar({
+        status: statusFilter || undefined,
+        circuit: circuitFilter || undefined,
+        organization: federationFilter,
+      });
       const map: Record<string, TournamentEditionList[]> = {};
       months.forEach((m) => {
         m.items.forEach((ed) => {
@@ -110,24 +117,46 @@ export function TournamentsScreen(_: Props) {
   useEffect(() => {
     if (viewMode === 'list') loadList();
     else loadCalendar();
-  }, [viewMode]);
+  }, [viewMode, federationFilter]);
+
+  useEffect(() => {
+    listFederations()
+      .then(setFederations)
+      .catch(() => setFederations([]));
+  }, []);
+
+  useEffect(() => {
+    if (route.params?.circuit) {
+      setCircuitFilter(route.params.circuit);
+      loadList(query, statusFilter, route.params.circuit, federationFilter);
+    }
+    if (route.params?.organization) {
+      setFederationFilter(route.params.organization);
+    }
+  }, [route.params?.circuit, route.params?.organization]);
 
   function onQueryChange(v: string) {
     setQuery(v);
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => loadList(v, statusFilter, circuitFilter), 500);
+    searchTimer.current = setTimeout(() => loadList(v, statusFilter, circuitFilter, federationFilter), 500);
   }
 
   function onStatusFilter(key: string) {
     const next = statusFilter === key ? '' : key;
     setStatusFilter(next);
-    loadList(query, next, circuitFilter);
+    loadList(query, next, circuitFilter, federationFilter);
   }
 
   function onCircuitFilter(key: string) {
     const next = circuitFilter === key ? '' : key;
     setCircuitFilter(next);
-    loadList(query, statusFilter, next);
+    loadList(query, statusFilter, next, federationFilter);
+  }
+
+  function onFederationFilter(id: number | undefined) {
+    const next = federationFilter === id ? undefined : id;
+    setFederationFilter(next);
+    loadList(query, statusFilter, circuitFilter, next);
   }
 
   function toggleCompareMode() { setCompareMode((v) => !v); setCompareIds([]); }
@@ -148,7 +177,7 @@ export function TournamentsScreen(_: Props) {
 
   function handleEndReached() {
     if (nextPage && !loadingMore && viewMode === 'list') {
-      loadList(query, statusFilter, circuitFilter, nextPage);
+      loadList(query, statusFilter, circuitFilter, federationFilter, nextPage);
     }
   }
 
@@ -200,6 +229,20 @@ export function TournamentsScreen(_: Props) {
               </Pressable>
             );
           })}
+          {federations.length > 0 ? (
+            <>
+              <View style={{ width: 1, backgroundColor: colors.borderSubtle, marginHorizontal: 2 }} />
+              {federations.map((f) => {
+                const active = federationFilter === f.id;
+                return (
+                  <Pressable key={f.id} onPress={() => onFederationFilter(f.id)}
+                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: active ? colors.accentNeon : colors.bgCard, borderWidth: 1, borderColor: active ? colors.accentNeon : colors.borderSubtle }}>
+                    <AppText variant="caption" style={{ color: active ? colors.bgBase : colors.textSecondary, fontWeight: '600' }}>{f.short_name || f.name}</AppText>
+                  </Pressable>
+                );
+              })}
+            </>
+          ) : null}
         </View>
       </ScrollView>
     </View>

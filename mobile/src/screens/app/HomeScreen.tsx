@@ -117,7 +117,7 @@ export function HomeScreen(_: Props) {
             }
           />
           {compat.length === 0
-            ? <EmptyState title="Nenhum torneio compatível." subtitle="Complete seu perfil com categoria e classe para ver torneios filtrados para você." icon="trophy-outline" />
+            ? <EmptyState title="Nenhum torneio compatível por enquanto." subtitle="Revise cidade, raio de viagem, classe, idade e categoria no seu perfil para ampliar as recomendações." icon="trophy-outline" />
             : compat.map((ed) => <TournamentCard key={ed.id} edition={ed} showEligibility onPress={() => navigation.navigate('TournamentDetail', { id: ed.id, edition: ed })} />)
           }
         </View>
@@ -125,7 +125,7 @@ export function HomeScreen(_: Props) {
 
       <View>
         <SectionHeader
-          title="⏰ Inscrições fechando"
+          title="Inscrições fechando"
           subtitle="Próximos 14 dias"
           action={
             <Pressable onPress={() => { haptic.select(); navigation.navigate('Tabs', { screen: 'Tournaments' } as never); }}>

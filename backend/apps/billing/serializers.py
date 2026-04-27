@@ -41,6 +41,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'plan', 'plan_name', 'plan_slug',
             'billing_period', 'status', 'is_active',
+            'pending_plan', 'pending_billing_period',
             'start_date', 'next_due_date',
             'cancel_at_period_end', 'canceled_at',
             'asaas_subscription_id',
@@ -48,7 +49,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         )
         read_only_fields = (
-            'id', 'status', 'start_date', 'next_due_date',
+            'id', 'status', 'pending_plan', 'pending_billing_period', 'start_date', 'next_due_date',
             'asaas_subscription_id', 'canceled_at',
             'created_at', 'updated_at',
         )

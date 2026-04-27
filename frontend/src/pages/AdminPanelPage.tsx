@@ -103,10 +103,12 @@ const DashboardTab: React.FC = () => {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [queue, setQueue] = useState<ReviewQueue | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
   async function load() {
     setLoading(true);
+    setError(null);
     try {
       const [d, q] = await Promise.all([
         api.get<Dashboard>('/api/admin-panel/dashboard/'),
@@ -115,7 +117,9 @@ const DashboardTab: React.FC = () => {
       setDash(d.data);
       setQueue(q.data);
     } catch (err) {
-      toast.error(extractApiError(err));
+      const message = extractApiError(err);
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -135,8 +139,16 @@ const DashboardTab: React.FC = () => {
     }
   }
 
-  if (loading || !dash) {
+  if (loading) {
     return <div className="py-16 flex justify-center"><Loader2 className="w-8 h-8 text-accent-neon animate-spin" /></div>;
+  }
+
+  if (!dash) {
+    return (
+      <div className="card text-center py-8 text-sm text-text-muted">
+        {error || 'Não foi possível carregar o dashboard.'}
+      </div>
+    );
   }
 
   return (
@@ -209,7 +221,7 @@ const StatsTab: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BarChart2 size={18} className="text-accent-neon" />
@@ -276,7 +288,7 @@ const StatsTab: React.FC = () => {
       </div>
 
       {/* Side-by-side bar charts */}
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-6">
         <div className="card !p-4 space-y-3">
           <h3 className="text-sm font-semibold text-text-secondary">Usuários por perfil</h3>
           <ResponsiveContainer width="100%" height={180}>

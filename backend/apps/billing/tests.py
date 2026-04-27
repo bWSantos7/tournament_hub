@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.billing.models import Feature, Plan, PlanFeature, Subscription, Payment, WebhookEvent
@@ -67,6 +67,7 @@ class SubscriptionCheckoutTestCase(TestCase):
         self.assertEqual(res.data['status'], 'active')
         self.assertEqual(res.data['plan_slug'], 'free')
 
+    @override_settings(ASAAS_API_KEY='')
     def test_checkout_paid_plan_without_asaas_stays_pending(self):
         res = self.client.post('/api/billing/subscription/checkout/', {
             'plan_slug': 'pro',
@@ -74,7 +75,16 @@ class SubscriptionCheckoutTestCase(TestCase):
             'payment_method': 'pix',
         }, format='json')
         self.assertEqual(res.status_code, 201)
-        self.assertEqual(res.data['status'], 'pending')
+        self.assertEqual(res.data['status'], 'active')
+        self.assertEqual(res.data['plan_slug'], 'free')
+        self.assertEqual(res.data['pending_plan'], self.pro.id)
+        self.assertEqual(res.data['pending_billing_period'], 'monthly')
+
+        subscription = Subscription.objects.get(user=self.user)
+        self.assertEqual(subscription.status, Subscription.STATUS_ACTIVE)
+        self.assertEqual(subscription.plan, self.free)
+        self.assertEqual(subscription.pending_plan, self.pro)
+        self.assertEqual(subscription.pending_billing_period, 'monthly')
 
     def test_checkout_requires_auth(self):
         anon = APIClient()

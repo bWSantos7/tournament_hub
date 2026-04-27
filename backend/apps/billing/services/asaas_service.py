@@ -95,7 +95,7 @@ def _request(method: str, path: str, _retries: int = 3, **kwargs):
                     body = response.json()
                 except Exception:
                     pass
-                logger.error('Asaas client error %s %s → %s: %s', method, path, response.status_code, body)
+                logger.error('Asaas client error %s %s -> %s: %s', method, path, response.status_code, body)
                 raise AsaasAPIError(f'Asaas returned {response.status_code}', body)
 
             response.raise_for_status()

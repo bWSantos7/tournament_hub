@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, Share, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -457,9 +457,17 @@ function RegistrationModal({ visible, onClose, detail, colors, onSuccess }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+        style={{ flex: 1, justifyContent: 'flex-end' }}
+      >
         <Pressable style={{ ...require('react-native').StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose} />
-        <View style={{ backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 16 }}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          style={{ maxHeight: '88%', backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+          contentContainerStyle={{ padding: 20, paddingBottom: Platform.OS === 'ios' ? 32 : 40, gap: 16 }}
+        >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <AppText variant="section">Inscrever-se</AppText>
             <Pressable onPress={onClose} style={{ padding: 4 }}>
@@ -492,8 +500,8 @@ function RegistrationModal({ visible, onClose, detail, colors, onSuccess }: {
 
           <Button title="Confirmar inscrição" onPress={submit} loading={submitting} />
           <Button title="Cancelar" variant="ghost" onPress={onClose} />
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -153,13 +153,12 @@ export function CheckoutScreen() {
           navigation.replace('PixPayment', { pixData: result.pix! });
         } else {
           Alert.alert(
-            'Pix gerado',
-            'Sua cobrança foi criada. Acesse sua conta bancária e pague o Pix para ativar o plano.',
-            [{ text: 'OK', onPress: () => navigation.navigate('Subscription') }],
+            'Pix indisponível',
+            'A cobrança ficou pendente, mas o Asaas não retornou o QR Code. Tente novamente em instantes.',
           );
         }
       } else if (isCard) {
-        const msg = result.status === 'active'
+        const msg = result.status === 'active' && !result.pending_plan
           ? 'Pagamento aprovado! Sua assinatura está ativa.'
           : 'Assinatura criada. Aguardando confirmação do pagamento.';
         Alert.alert('Concluído', msg, [

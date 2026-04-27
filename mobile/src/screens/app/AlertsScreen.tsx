@@ -25,7 +25,6 @@ const KIND_CONFIG: Record<string, { icon: string; color: string; label: string }
 };
 
 interface AlertPrefs {
-  email_enabled: boolean;
   in_app_enabled: boolean;
   push_enabled: boolean;
   changes_enabled: boolean;
@@ -196,7 +195,6 @@ function PrefsPanel({ prefs, onSave, saving }: { prefs: AlertPrefs | null; onSav
   if (!prefs) return <LoadingBlock />;
 
   const rows: { label: string; sub: string; key: keyof AlertPrefs }[] = [
-    { label: 'E-mail', sub: 'Receber alertas por e-mail', key: 'email_enabled' },
     { label: 'In-app', sub: 'Notificações dentro do app', key: 'in_app_enabled' },
     { label: 'Push', sub: 'Notificações push no dispositivo', key: 'push_enabled' },
     { label: 'Alterações', sub: 'Quando dados do torneio mudarem', key: 'changes_enabled' },

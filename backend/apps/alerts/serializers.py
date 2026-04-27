@@ -23,6 +23,10 @@ class UserAlertPreferenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserAlertPreference
         fields = (
-            'email_enabled', 'in_app_enabled', 'push_enabled',
+            'in_app_enabled', 'push_enabled',
             'deadline_days', 'changes_enabled', 'draws_enabled',
         )
+
+    def update(self, instance, validated_data):
+        instance.email_enabled = False
+        return super().update(instance, validated_data)

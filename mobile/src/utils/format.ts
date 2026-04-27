@@ -177,6 +177,9 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   status: 'status',
   surface: 'superfície',
   base_price_brl: 'valor da inscrição',
+  official_source_url: 'link oficial',
+  data_confidence: 'confiabilidade dos dados',
+  source_name: 'fonte dos dados',
 };
 
 function formatChangeValue(field: string, value: unknown): string {
@@ -202,6 +205,14 @@ function formatChangeValue(field: string, value: unknown): string {
   return String(value);
 }
 
+function humanizeFieldName(field: string): string {
+  return field
+    .replace(/_id$/, '')
+    .replace(/_/g, ' ')
+    .replace(/\burl\b/gi, 'link')
+    .replace(/\bid\b/gi, 'identificador');
+}
+
 export function formatChangeEventTitle(eventType: string): string {
   return CHANGE_EVENT_LABELS[eventType] || 'Informações do torneio atualizadas';
 }
@@ -217,7 +228,7 @@ export function formatChangeEventDetails(event: TournamentChangeEvent): string[]
   }
 
   return entries.map(([field, diff]) => {
-    const label = CHANGE_FIELD_LABELS[field] || field;
+    const label = CHANGE_FIELD_LABELS[field] || humanizeFieldName(field);
     if (diff && typeof diff === 'object' && !Array.isArray(diff)) {
       const typedDiff = diff as { old?: unknown; new?: unknown };
       const oldValue = formatChangeValue(field, typedDiff.old);

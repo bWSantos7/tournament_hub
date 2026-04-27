@@ -27,6 +27,7 @@ export function PixPaymentScreen() {
 
   const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [paymentState, setPaymentState] = useState<'waiting' | 'confirmed' | 'expired' | 'error'>('waiting');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -37,13 +38,14 @@ export function PixPaymentScreen() {
       try {
         const sub = await fetchSubscription();
         if (mounted && sub.status === 'active') {
+          setPaymentState('confirmed');
           clearInterval(pollRef.current!);
           Alert.alert('Pagamento confirmado!', 'Sua assinatura está ativa.', [
             { text: 'OK', onPress: () => { if (mounted) navigation.replace('Subscription'); } },
           ]);
         }
       } catch {
-        // ignore poll errors silently
+        if (mounted) setPaymentState('error');
       }
     }, POLL_INTERVAL);
 
@@ -52,6 +54,14 @@ export function PixPaymentScreen() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!pixData.expiration) return;
+    const expiresAt = new Date(pixData.expiration).getTime();
+    if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
+      setPaymentState('expired');
+    }
+  }, [pixData.expiration]);
 
   async function handleCopy() {
     await Share.share({ message: pixData.copia_e_cola });
@@ -64,11 +74,14 @@ export function PixPaymentScreen() {
     try {
       const sub = await fetchSubscription();
       if (sub.status === 'active') {
+        setPaymentState('confirmed');
         navigation.replace('Subscription');
       } else {
+        setPaymentState('waiting');
         Alert.alert('Pagamento pendente', 'Ainda não identificamos seu pagamento. Aguarde alguns instantes.');
       }
     } catch {
+      setPaymentState('error');
       Alert.alert('Erro', 'Não foi possível verificar o pagamento.');
     } finally {
       setChecking(false);
@@ -82,6 +95,18 @@ export function PixPaymentScreen() {
         Escaneie o QR code ou copie o código abaixo no seu banco.
         A confirmação é automática em até 1 minuto.
       </Text>
+
+      <View style={[
+        styles.stateBadge,
+        paymentState === 'confirmed' ? styles.stateConfirmed : paymentState === 'expired' || paymentState === 'error' ? styles.stateError : styles.stateWaiting,
+      ]}>
+        <Text style={styles.stateText}>
+          {paymentState === 'confirmed' ? 'Pagamento confirmado'
+            : paymentState === 'expired' ? 'Pix expirado'
+            : paymentState === 'error' ? 'Erro ao verificar pagamento'
+            : 'Aguardando pagamento'}
+        </Text>
+      </View>
 
       {pixData.qr_code_image ? (
         <View style={styles.qrContainer}>
@@ -110,7 +135,7 @@ export function PixPaymentScreen() {
             {pixData.copia_e_cola}
           </Text>
           <TouchableOpacity style={styles.copyBtn} onPress={handleCopy}>
-            <Text style={styles.copyBtnText}>{copied ? '✓ Copiado!' : 'Copiar código'}</Text>
+            <Text style={styles.copyBtnText}>{copied ? 'Código aberto para copiar' : 'Copiar código Pix'}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -121,10 +146,10 @@ export function PixPaymentScreen() {
         </Text>
       ) : null}
 
-      <View style={styles.pollInfo}>
+      {paymentState !== 'expired' ? <View style={styles.pollInfo}>
         <ActivityIndicator size="small" color="#6366F1" style={{ marginRight: 8 }} />
         <Text style={styles.pollText}>Verificando pagamento automaticamente...</Text>
-      </View>
+      </View> : null}
 
       <TouchableOpacity style={styles.checkBtn} onPress={handleCheckManually} disabled={checking}>
         {checking ? (
@@ -147,6 +172,11 @@ const styles = StyleSheet.create({
 
   title:    { fontSize: 22, fontWeight: '700', color: '#1F2937', marginBottom: 8, textAlign: 'center' },
   subtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  stateBadge: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginBottom: 18, borderWidth: 1 },
+  stateWaiting: { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' },
+  stateConfirmed: { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' },
+  stateError: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
+  stateText: { fontSize: 12, fontWeight: '700', color: '#374151' },
 
   qrContainer:      { backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   qrImage:          { width: 220, height: 220 },
